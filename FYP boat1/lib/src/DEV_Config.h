@@ -44,12 +44,12 @@
 /**
  * GPIO config
 **/
-#define EPD_SCK_PIN  13
-#define EPD_MOSI_PIN 9
-#define EPD_CS_PIN   15
-#define EPD_RST_PIN  42
-#define EPD_DC_PIN   41
-#define EPD_BUSY_PIN 38
+#define EPD_SCK_PIN  35
+#define EPD_MOSI_PIN 36
+#define EPD_CS_PIN   45
+#define EPD_RST_PIN  47
+#define EPD_DC_PIN   48
+#define EPD_BUSY_PIN 21
 
 #define GPIO_PIN_SET   1
 #define GPIO_PIN_RESET 0
