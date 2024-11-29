@@ -33,7 +33,7 @@ void setup()
 	EPD_2in13_V4_Init_Fast();
 	Paint_SelectImage(BlackImage);
 	Paint_Clear(WHITE);
-	Paint_DrawBitMap(gImage_2in13);
+	// Paint_DrawBitMap(gImage_2in13);
 
 	EPD_2in13_V4_Display_Fast(BlackImage);
 	DEV_Delay_ms(2000);
