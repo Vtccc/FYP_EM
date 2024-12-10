@@ -30,9 +30,9 @@ ST7565_LCD display = ST7565_LCD(LCD_DIN, LCD_SCLK, LCD_A0, LCD_RESET, LCD_CS);
 
 /*/ Comment out above, uncomment this block to use hardware SPI
 // connect LCD 'DIN' & 'SCLK' to board's hardware SPI pins
-#define LCD_A0     7
-#define LCD_RESET  6
-#define LCD_CS     5
+#define LCD_A0     16
+#define LCD_RESET  3
+#define LCD_CS     8
 ST7565 display = ST7565(LCD_A0, LCD_RESET, LCD_CS);
 */
 
@@ -60,6 +60,7 @@ static const unsigned char PROGMEM logo_bmp[] =
 
 void testscrolldisplay()
 {
+	Serial.println(F("Scrolling Display Test"));
 	// scroll right
 	for (uint8_t scroll = 0; scroll < display.width(); scroll++)
 	{
@@ -482,7 +483,9 @@ void testanimate(const uint8_t *bitmap, uint8_t w, uint8_t h)
 // setup function
 void setup()
 {
-	Serial.begin(9600);
+	Serial.begin(115200);
+
+	Serial.println(F("ST7565 LCD test"));
 
 	// initialize the ST7565 LCD display with contrast = 12 (0 <= coontrast <= 63)
 	display.begin(13);
