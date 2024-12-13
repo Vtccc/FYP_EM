@@ -19,6 +19,7 @@ static const char *TAG_GPS = "GPS_Task";
 static const char *TAG_IMU = "IMU_Task";
 static const char *TAG_SD = "SD_Card_Task";
 static const char *TAG_COMPASS = "Compass_Task";
+static const char *TAG_EPAPER = "EPaper_Task";
 
 // GPS
 static const int RXPin = 41, TXPin = 42;
@@ -32,6 +33,7 @@ EspSoftwareSerial::UART ss;
 Adafruit_ICM20948 icm;
 int16_t ax, ay, az;
 int16_t gx, gy, gz;
+float roll, pitch, yaw;
 
 int compass_azimuth;
 
@@ -112,20 +114,15 @@ void IMU_Task(void *pvParameters) {
     gy = gyro.gyro.y;
     gz = gyro.gyro.z;
 
+    // Compute Euler angles (roll, pitch, yaw)
+    roll = atan2(ay, az) * 180.0 / PI;  // Roll from accelerometer
+    pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI; // Pitch from accelerometer
+    yaw += (gz * 0.01);
+
     // Log the data
-    Serial.print("Accel (m/s^2): ");
-    Serial.print(ax);
-    Serial.print(", ");
-    Serial.print(ay);
-    Serial.print(", ");
-    Serial.print(az);
-    Serial.print("    ");
-    Serial.print("Gyro (rps): ");
-    Serial.print(gx);
-    Serial.print(", ");
-    Serial.print(gy);
-    Serial.print(", ");
-    Serial.println(gz);
+    Serial.printf("ax: %d, ay: %d, az: %d\n", ax, ay, az);
+    Serial.printf("gx: %d, gy: %d, gz: %d\n", gx, gy, gz);
+    Serial.printf("Roll: %.2f, Pitch: %.2f, Yaw: %.2f\n", roll, pitch, yaw);
 
     ESP_LOGI(TAG_IMU, "Accel (m/s^2): %.2f, %.2f, %.2f", ax, ay, az);
     ESP_LOGI(TAG_IMU, "Gyro (rps): %.2f, %.2f, %.2f", gx, gy, gz);
@@ -202,47 +199,49 @@ void ePaper_Task(void *pvParameters) {
 		while (1)
 			;
 	}
+  printf("Paint_NewImage\r\n");
+	Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
+	Paint_Clear(WHITE);
 
   Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
 	Debug("Partial refresh\r\n");
 	Paint_SelectImage(BlackImage);
 
-	PAINT_TIME sPaint_time;
-	sPaint_time.Hour = 12;
-	sPaint_time.Min = 34;
-	sPaint_time.Sec = 56;
-	UBYTE num = 10;
+  int rectHeight = 40;
 
-  while (1) {
-    // Display data on ePaper
+  while (true) {
+    // // Display data on ePaper
+    // int rectWidth = (int)((roll / 50.0) * (EPD_2in13_V4_WIDTH / 2));
 
-    sPaint_time.Sec = sPaint_time.Sec + 1;
-		if (sPaint_time.Sec == 60)
-		{
-			sPaint_time.Min = sPaint_time.Min + 1;
-			sPaint_time.Sec = 0;
-			if (sPaint_time.Min == 60)
-			{
-				sPaint_time.Hour = sPaint_time.Hour + 1;
-				sPaint_time.Min = 0;
-				if (sPaint_time.Hour == 24)
-				{
-					sPaint_time.Hour = 0;
-					sPaint_time.Min = 0;
-					sPaint_time.Sec = 0;
-				}
-			}
-		}
-		Paint_ClearWindows(150, 80, 150 + Font20.Width * 7, 80 + Font20.Height, WHITE);
-		Paint_DrawTime(150, 80, &sPaint_time, &Font20, WHITE, BLACK);
+    // // Clear the previous rectangle
+    // Paint_ClearWindows(0, EPD_2in13_V4_HEIGHT / 2 - rectHeight / 2, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT / 2 + rectHeight / 2, WHITE);
 
-		// num = num - 1;
-		// if (num == 0)
-		// {
-		// 	break;
-		// }
-		EPD_2in13_V4_Display_Partial(BlackImage);
-		// DEV_Delay_ms(500); // Analog clock 1s
+    // // Draw the new rectangle
+    // if (rectWidth > 0) {
+    //   Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    // } else {
+    //   Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2 - rectWidth, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    // }
+
+		// EPD_2in13_V4_Display_Partial(BlackImage);
+    // vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+    int rectWidth = (int)((roll / 50.0) * (EPD_2in13_V4_WIDTH / 2));
+    int rectHeight = 40;
+
+    // Clear the previous rectangle
+    Paint_ClearWindows(0, 100, EPD_2in13_V4_WIDTH, 120, WHITE);
+
+    // Draw the new rectangle
+    if (rectWidth > 0) {
+      Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    } else {
+      Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    }
+
+    // Partial refresh of the display
+    EPD_2in13_V4_Display_Partial(BlackImage);
+
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
@@ -256,6 +255,8 @@ void setup() {
   xTaskCreate(SD_Card_Task, TAG_SD, 8192, NULL, 1, NULL);
   delay(200);
   xTaskCreate(Compass_Task, TAG_COMPASS, 4096, NULL, 1, NULL);
+  delay(200);
+  xTaskCreate(ePaper_Task, TAG_EPAPER, 4096, NULL, 1, NULL);
 
   ESP_LOGI("setup", "setup");
 }
