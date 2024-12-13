@@ -8,6 +8,7 @@
 #include <QMC5883LCompass.h>
 #include "SPI.h"
 
+
 static const char *TAG_GPS = "GPS_Task";
 static const char *TAG_IMU = "IMU_Task";
 static const char *TAG_SD = "SD_Card_Task";
@@ -85,10 +86,12 @@ void GPS_Task(void *pvParameters) {
 void IMU_Task(void *pvParameters) {
   ESP_LOGI(TAG_IMU, "IMU_Task");
 
-  Wire.begin(37, 38);
+  Wire.begin(21, 20);
   icm.begin_I2C(0x68, &Wire);
 
   sensors_event_t accel, gyro, temp;
+
+  static char acceleration[20], gyroscopic[20];
 
   while (true) {
     // Get sensor events
@@ -104,6 +107,20 @@ void IMU_Task(void *pvParameters) {
     gz = gyro.gyro.z;
 
     // Log the data
+    Serial.print("Accel (m/s^2): ");
+    Serial.print(ax);
+    Serial.print(", ");
+    Serial.print(ay);
+    Serial.print(", ");
+    Serial.print(az);
+    Serial.print("    ");
+    Serial.print("Gyro (rps): ");
+    Serial.print(gx);
+    Serial.print(", ");
+    Serial.print(gy);
+    Serial.print(", ");
+    Serial.println(gz);
+
     ESP_LOGI(TAG_IMU, "Accel (m/s^2): %.2f, %.2f, %.2f", ax, ay, az);
     ESP_LOGI(TAG_IMU, "Gyro (rps): %.2f, %.2f, %.2f", gx, gy, gz);
 
@@ -160,6 +177,13 @@ void Compass_Task(void *pvParameters) {
     // Return Azimuth reading
     compass_azimuth = compass.getAzimuth();
     ESP_LOGI(TAG_COMPASS, "Compass_Task, Azimuth: %d", compass_azimuth);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  }
+}
+
+void ePaper_Task(void *pvParameters) {
+  while (1) {
+    // Display data on ePaper
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }

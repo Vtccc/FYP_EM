@@ -9,7 +9,7 @@ Serial.begin(115200);
 delay(1000);
 
 // Initialize I²C with custom SDA and SCL pins
-Wire.begin(38, 37); // SDA = GPIO25, SCL = GPIO26
+Wire.begin(21, 20); // SDA = GPIO25, SCL = GPIO26
 
 // Try to initialize the ICM20948
 if (!icm.begin_I2C(0x68, &Wire)) { // Default I²C address is 0x69
