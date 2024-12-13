@@ -230,19 +230,21 @@ void ePaper_Task(void *pvParameters) {
     int rectHeight = 40;
 
     // Clear the previous rectangle
-    Paint_ClearWindows(0, EPD_2in13_V4_HEIGHT / 2 - rectHeight / 2, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT / 2 + rectHeight / 2, WHITE);
+    Paint_ClearWindows(0, 150, EPD_2in13_V4_WIDTH, 150, WHITE);
 
     // Draw the new rectangle
     if (rectWidth > 0) {
       Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
     } else {
-      Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+      Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
     }
 
     // Partial refresh of the display
     EPD_2in13_V4_Display_Partial(BlackImage);
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
   }
 }
 
