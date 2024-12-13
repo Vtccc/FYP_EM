@@ -159,7 +159,7 @@ void SD_Card_Task(void *pvParameters) {
       // create a new file by opening a new file and immediately close it
       myFile = SD.open(filename, FILE_APPEND);
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
-      myFile.printf("%d,%d,%d,%d,%d,%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d\n", ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth);
+      myFile.printf("%d,%d,%d,%d,%d,%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw);
       ESP_LOGI(TAG_SD, "Data appended to file.");
       myFile.close();
     } else {
@@ -230,7 +230,7 @@ void ePaper_Task(void *pvParameters) {
     int rectHeight = 40;
 
     // Clear the previous rectangle
-    Paint_ClearWindows(0, 100, EPD_2in13_V4_WIDTH, 120, WHITE);
+    Paint_ClearWindows(0, EPD_2in13_V4_HEIGHT / 2 - rectHeight / 2, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT / 2 + rectHeight / 2, WHITE);
 
     // Draw the new rectangle
     if (rectWidth > 0) {
