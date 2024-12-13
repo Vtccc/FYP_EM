@@ -2,8 +2,8 @@
 #include "esp_log.h"
 #include <TinyGPSPlus.h>
 #include <SoftwareSerial.h>
-#include "I2Cdev.h"
-#include "MPU6050.h"
+#include <Wire.h>
+#include <Adafruit_ICM20948.h>
 #include "SD.h"
 #include <QMC5883LCompass.h>
 #include "SPI.h"
@@ -22,7 +22,7 @@ TinyGPSPlus gps;
 EspSoftwareSerial::UART ss;
 
 // IMU
-MPU6050 accelgyro;
+Adafruit_ICM20948 icm;
 int16_t ax, ay, az;
 int16_t gx, gy, gz;
 
@@ -84,17 +84,33 @@ void GPS_Task(void *pvParameters) {
 
 void IMU_Task(void *pvParameters) {
   ESP_LOGI(TAG_IMU, "IMU_Task");
-  Wire.begin(38, 37);
-  accelgyro.initialize();
-  ESP_LOGI(TAG_IMU, "Testing device connections...");
-  ESP_LOGI(TAG_IMU, "%s", accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
+
+  Wire.begin(37, 38);
+  icm.begin_I2C(0x68, &Wire);
+
+  sensors_event_t accel, gyro, temp;
+
   while (true) {
-    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    ESP_LOGI(TAG_IMU, "a/g:\t%d\t%d\t%d\t%d\t%d\t%d\tHigh water mark of IMU_Task: %d", ax, ay, az, gx, gy, gz, uxTaskGetStackHighWaterMark(NULL));
+    // Get sensor events
+    icm.getEvent(&accel, &gyro, &temp);
+
+    // Store accelerometer and gyroscope values
+    ax = accel.acceleration.x;
+    ay = accel.acceleration.y;
+    az = accel.acceleration.z;
+
+    gx = gyro.gyro.x;
+    gy = gyro.gyro.y;
+    gz = gyro.gyro.z;
+
+    // Log the data
+    ESP_LOGI(TAG_IMU, "Accel (m/s^2): %.2f, %.2f, %.2f", ax, ay, az);
+    ESP_LOGI(TAG_IMU, "Gyro (rps): %.2f, %.2f, %.2f", gx, gy, gz);
+
+    ESP_LOGI(TAG_IMU, "High water mark of IMU_Task: %d", uxTaskGetStackHighWaterMark(NULL));
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
-
 
 
 void SD_Card_Task(void *pvParameters) {
@@ -122,7 +138,7 @@ void SD_Card_Task(void *pvParameters) {
     if (SD.exists(filename)) {
       Serial.println(F("File exists on SD Card. Now appending data to it."));
       // create a new file by opening a new file and immediately close it
-      myFile = SD.open(filename, FILE_WRITE);
+      myFile = SD.open(filename, FILE_APPEND);
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
       myFile.printf("%d,%d,%d,%d,%d,%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d\n", ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth);
       ESP_LOGI(TAG_SD, "Data appended to file.");
