@@ -24,8 +24,10 @@ static const char *TAG_EPAPER = "EPaper_Task";
 // GPS
 static const int RXPin = 41, TXPin = 42;
 static const uint32_t GPSBaud = 38400;
+
 // The TinyGPSPlus object
 TinyGPSPlus gps;
+
 // The serial connection to the GPS device
 EspSoftwareSerial::UART ss;
 
@@ -35,8 +37,8 @@ int16_t ax, ay, az;
 int16_t gx, gy, gz;
 double roll, pitch, yaw;
 
+// Compass
 int compass_azimuth;
-
 
 // SD Card
 #define PIN_SPI_CS 10 // The ESP32 pin GPIO5
@@ -182,6 +184,11 @@ void Compass_Task(void *pvParameters) {
 }
 
 void ePaper_Task(void *pvParameters) {
+  const int rectHeight = 40;
+  const int lineLength = 60;
+  const double maxAngle = 50.0;
+  const double k = 0.05; // Non-linear scaling factor
+
   DEV_Module_Init();
 
   EPD_2in13_V4_Init();
@@ -205,9 +212,14 @@ void ePaper_Task(void *pvParameters) {
 	Paint_SelectImage(BlackImage);
 
   while (true) {
-    int rectWidth = (int)((roll / 50.0) * (EPD_2in13_V4_WIDTH / 2));
-    int rectHeight = 40;
-    int lineLength = 60;
+    // Implenment non-linear scaling of roll to rectWidth
+    if (roll < -maxAngle) roll = -maxAngle;
+    if (roll > maxAngle) roll = maxAngle;
+
+    double scaledRoll = tanh(k * roll) / tanh(k * maxAngle);
+    int rectWidth = (int)(scaledRoll * (EPD_2in13_V4_HEIGHT / 2));
+
+    Serial.printf("Roll: %.2f, Scaled Roll: %.2f, Rect Width: %d\n", roll, scaledRoll, rectWidth);
 
     // Clear the previous rectangle
     Paint_ClearWindows(0, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2 - 2, EPD_2in13_V4_HEIGHT, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2 + 2, WHITE);
