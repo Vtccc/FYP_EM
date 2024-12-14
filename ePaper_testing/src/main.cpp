@@ -30,7 +30,7 @@ void setup()
 
 #if 1 // show image for array
 	Debug("show image for array\r\n");
-	EPD_2in13_V4_Init_Fast();
+	EPD_2in13_V4_Init_Fast(); 
 	Paint_SelectImage(BlackImage);
 	Paint_Clear(WHITE);
 	// Paint_DrawBitMap(gImage_2in13);

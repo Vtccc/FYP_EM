@@ -33,7 +33,7 @@ EspSoftwareSerial::UART ss;
 Adafruit_ICM20948 icm;
 int16_t ax, ay, az;
 int16_t gx, gy, gz;
-float roll, pitch, yaw;
+double roll, pitch, yaw;
 
 int compass_azimuth;
 
@@ -75,7 +75,6 @@ void displayInfo()
 
   ESP_LOGI(TAG_GPS, "%s", logBuffer);
 }
-
 
 void GPS_Task(void *pvParameters) {
   ESP_LOGI(TAG_GPS, "GPS_Task");
@@ -120,8 +119,6 @@ void IMU_Task(void *pvParameters) {
     yaw += (gz * 0.01);
 
     // Log the data
-    Serial.printf("ax: %d, ay: %d, az: %d\n", ax, ay, az);
-    Serial.printf("gx: %d, gy: %d, gz: %d\n", gx, gy, gz);
     Serial.printf("Roll: %.2f, Pitch: %.2f, Yaw: %.2f\n", roll, pitch, yaw);
 
     ESP_LOGI(TAG_IMU, "Accel (m/s^2): %.2f, %.2f, %.2f", ax, ay, az);
@@ -159,7 +156,7 @@ void SD_Card_Task(void *pvParameters) {
       // create a new file by opening a new file and immediately close it
       myFile = SD.open(filename, FILE_APPEND);
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
-      myFile.printf("%d,%d,%d,%d,%d,%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw);
+      myFile.printf("%d,%f,%ld,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
       ESP_LOGI(TAG_SD, "Data appended to file.");
       myFile.close();
     } else {
@@ -207,44 +204,23 @@ void ePaper_Task(void *pvParameters) {
 	Debug("Partial refresh\r\n");
 	Paint_SelectImage(BlackImage);
 
-  int rectHeight = 40;
-
   while (true) {
-    // // Display data on ePaper
-    // int rectWidth = (int)((roll / 50.0) * (EPD_2in13_V4_WIDTH / 2));
-
-    // // Clear the previous rectangle
-    // Paint_ClearWindows(0, EPD_2in13_V4_HEIGHT / 2 - rectHeight / 2, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT / 2 + rectHeight / 2, WHITE);
-
-    // // Draw the new rectangle
-    // if (rectWidth > 0) {
-    //   Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    // } else {
-    //   Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2 - rectWidth, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    // }
-
-		// EPD_2in13_V4_Display_Partial(BlackImage);
-    // vTaskDelay(1000 / portTICK_PERIOD_MS);
-
     int rectWidth = (int)((roll / 50.0) * (EPD_2in13_V4_WIDTH / 2));
     int rectHeight = 40;
+    int lineLength = 60;
 
     // Clear the previous rectangle
-    Paint_ClearWindows(0, 150, EPD_2in13_V4_WIDTH, 150, WHITE);
+    Paint_ClearWindows(0, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2 - 2, EPD_2in13_V4_HEIGHT, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2 + 2, WHITE);
 
-    // Draw the new rectangle
-    if (rectWidth > 0) {
-      Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    } else {
-      Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    }
+    // Draw the new rectangle and center line
+    Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    Paint_DrawLine(EPD_2in13_V4_HEIGHT / 2 ,EPD_2in13_V4_WIDTH / 2 - lineLength / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + lineLength / 2, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+
 
     // Partial refresh of the display
     EPD_2in13_V4_Display_Partial(BlackImage);
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
   }
 }
 
