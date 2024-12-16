@@ -33,8 +33,8 @@ EspSoftwareSerial::UART ss;
 
 // IMU
 Adafruit_ICM20948 icm;
-int16_t ax, ay, az;
-int16_t gx, gy, gz;
+double ax, ay, az;
+double gx, gy, gz;
 double roll, pitch, yaw;
 
 // Compass
@@ -88,7 +88,7 @@ void GPS_Task(void *pvParameters) {
       }
     }
     ESP_LOGI(TAG_GPS, "High water mark of GPS_Task: %d", uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
@@ -99,8 +99,6 @@ void IMU_Task(void *pvParameters) {
   icm.begin_I2C(0x68, &Wire);
 
   sensors_event_t accel, gyro, temp;
-
-  static char acceleration[20], gyroscopic[20];
 
   while (true) {
     // Get sensor events
@@ -127,7 +125,7 @@ void IMU_Task(void *pvParameters) {
     ESP_LOGI(TAG_IMU, "Gyro (rps): %.2f, %.2f, %.2f", gx, gy, gz);
 
     ESP_LOGI(TAG_IMU, "High water mark of IMU_Task: %d", uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
@@ -136,7 +134,7 @@ void SD_Card_Task(void *pvParameters) {
   myspi.begin(12, 13, 11, 10);
   while (!SD.begin(10)){
     ESP_LOGE(TAG_SD, "SD CARD FAILED, OR NOT PRESENT! Retrying...");
-    vTaskDelay(1000 / portTICK_PERIOD_MS); // Wait for 1 second before retrying
+    vTaskDelay(500 / portTICK_PERIOD_MS); // Wait for 1 second before retrying
   }
   ESP_LOGI(TAG_SD, "SD CARD OK!");
   // Find the smallest available file number using C style file functions
@@ -165,7 +163,7 @@ void SD_Card_Task(void *pvParameters) {
       ESP_LOGE(TAG_SD, "File %s does not exist on SD Card.", filename);
     }
     ESP_LOGI(TAG_SD, "High water mark of SD_Card_Task: %d", uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
@@ -179,7 +177,7 @@ void Compass_Task(void *pvParameters) {
     // Return Azimuth reading
     compass_azimuth = compass.getAzimuth();
     ESP_LOGI(TAG_COMPASS, "Compass_Task, Azimuth: %d", compass_azimuth);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
@@ -228,7 +226,6 @@ void ePaper_Task(void *pvParameters) {
     Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
     Paint_DrawLine(EPD_2in13_V4_HEIGHT / 2 ,EPD_2in13_V4_WIDTH / 2 - lineLength / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + lineLength / 2, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
-
     // Partial refresh of the display
     EPD_2in13_V4_Display_Partial(BlackImage);
 
@@ -239,13 +236,9 @@ void ePaper_Task(void *pvParameters) {
 void setup() {
   Serial.begin(115200);
   xTaskCreate(GPS_Task, TAG_GPS, 4096, NULL, 10, NULL);
-  delay(200);
   xTaskCreate(IMU_Task, TAG_IMU, 4096, NULL, 11, NULL);
-  delay(200);
   xTaskCreate(SD_Card_Task, TAG_SD, 8192, NULL, 1, NULL);
-  delay(200);
   xTaskCreate(Compass_Task, TAG_COMPASS, 4096, NULL, 1, NULL);
-  delay(200);
   xTaskCreate(ePaper_Task, TAG_EPAPER, 4096, NULL, 1, NULL);
 
   ESP_LOGI("setup", "setup");
