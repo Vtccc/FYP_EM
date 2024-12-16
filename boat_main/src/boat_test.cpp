@@ -88,7 +88,7 @@ void GPS_Task(void *pvParameters) {
       }
     }
     ESP_LOGI(TAG_GPS, "High water mark of GPS_Task: %d", uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -125,7 +125,7 @@ void IMU_Task(void *pvParameters) {
     ESP_LOGI(TAG_IMU, "Gyro (rps): %.2f, %.2f, %.2f", gx, gy, gz);
 
     ESP_LOGI(TAG_IMU, "High water mark of IMU_Task: %d", uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -149,21 +149,38 @@ void SD_Card_Task(void *pvParameters) {
     }
     fileNumber++;
   }
+
+  int centiseconds = 0;
+  int seconds = 0; 
+  int previousSeconds = 0;
+
   while (true) {
     // Serial.println("SD_Card_Task");
     if (SD.exists(filename)) {
       Serial.println(F("File exists on SD Card. Now appending data to it."));
       // create a new file by opening a new file and immediately close it
       myFile = SD.open(filename, FILE_APPEND);
+
+      // Increment centiseconds
+      seconds = gps.time.second();
+      if (seconds != previousSeconds){
+        previousSeconds = seconds;
+        centiseconds = 0;
+      }else{
+        centiseconds += 10;
+      }
+
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
-      myFile.printf("%d,%f,%ld,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
+      myFile.printf("%d,%f,%ld,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), seconds, centiseconds, compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
+
       ESP_LOGI(TAG_SD, "Data appended to file.");
       myFile.close();
     } else {
       ESP_LOGE(TAG_SD, "File %s does not exist on SD Card.", filename);
     }
     ESP_LOGI(TAG_SD, "High water mark of SD_Card_Task: %d", uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -177,7 +194,7 @@ void Compass_Task(void *pvParameters) {
     // Return Azimuth reading
     compass_azimuth = compass.getAzimuth();
     ESP_LOGI(TAG_COMPASS, "Compass_Task, Azimuth: %d", compass_azimuth);
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -229,7 +246,7 @@ void ePaper_Task(void *pvParameters) {
     // Partial refresh of the display
     EPD_2in13_V4_Display_Partial(BlackImage);
 
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
