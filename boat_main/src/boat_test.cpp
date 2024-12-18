@@ -150,9 +150,9 @@ void SD_Card_Task(void *pvParameters) {
     fileNumber++;
   }
 
-  int centiseconds = 0;
-  int seconds = 0; 
-  int previousSeconds = 0;
+  // int centiseconds = 0;
+  // int seconds = 0; 
+  // int previousSeconds = 0;
 
   while (true) {
     // Serial.println("SD_Card_Task");
@@ -162,16 +162,16 @@ void SD_Card_Task(void *pvParameters) {
       myFile = SD.open(filename, FILE_APPEND);
 
       // Increment centiseconds
-      seconds = gps.time.second();
-      if (seconds != previousSeconds){
-        previousSeconds = seconds;
-        centiseconds = 0;
-      }else{
-        centiseconds += 10;
-      }
+      // seconds = gps.time.second();
+      // if (seconds != previousSeconds){
+      //   previousSeconds = seconds;
+      //   centiseconds = 0;
+      // }else{
+      //   centiseconds += 10;
+      // }
 
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
-      myFile.printf("%d,%f,%ld,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), seconds, centiseconds, compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
+      myFile.printf("%d,%f,%ld,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
 
       ESP_LOGI(TAG_SD, "Data appended to file.");
       myFile.close();
@@ -180,7 +180,7 @@ void SD_Card_Task(void *pvParameters) {
     }
     ESP_LOGI(TAG_SD, "High water mark of SD_Card_Task: %d", uxTaskGetStackHighWaterMark(NULL));
 
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
