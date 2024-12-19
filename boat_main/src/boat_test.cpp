@@ -24,6 +24,8 @@ static const char *TAG_EPAPER = "EPaper_Task";
 // GPS
 static const int RXPin = 41, TXPin = 42;
 static const uint32_t GPSBaud = 38400;
+double hdop, lat, lng, speed, course;
+int satellites_value, age, month, day, year, hour, minute, second, centisecond;
 
 // The TinyGPSPlus object
 TinyGPSPlus gps;
@@ -36,6 +38,7 @@ Adafruit_ICM20948 icm;
 double ax, ay, az;
 double gx, gy, gz;
 double roll, pitch, yaw;
+String rollString = "";
 
 // Compass
 int compass_azimuth;
@@ -43,6 +46,23 @@ int compass_azimuth;
 // SD Card
 #define PIN_SPI_CS 10 // The ESP32 pin GPIO5
 File myFile;
+double Roll[10] = {400,400,400,400,400,400,400,400,400,400};
+int count = 0;
+
+String AtoS(double* array, size_t size)
+{
+  String result = "[";
+  for (size_t i = 0; i < size; ++i)
+  {
+    result += String(array[i],2);
+    if (i < size - 1)
+    {
+      result += ",";
+    }
+  }
+  result += "]";
+  return result;
+}
 
 void displayInfo()
 {
@@ -117,6 +137,20 @@ void IMU_Task(void *pvParameters) {
     roll = atan2(ay, az) * 180.0 / PI;  // Roll from accelerometer
     pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI; // Pitch from accelerometer
     yaw += (gz * 0.01);
+  
+    Roll[count] = roll;
+    Serial.printf("Roll save: %f \n", roll);
+    
+    if (count < 10)
+    {
+      count++;
+    }
+    else
+    {
+      count = 0;
+    }
+
+    
 
     // Log the data
     // Serial.printf("Roll: %.2f, Pitch: %.2f, Yaw: %.2f\n", roll, pitch, yaw);
@@ -170,10 +204,18 @@ void SD_Card_Task(void *pvParameters) {
       //   centiseconds += 10;
       // }
 
+      size_t rollSize = sizeof(Roll)/sizeof(Roll[0]);
+      rollString = AtoS(Roll, rollSize);
+
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
-      // myFile.printf("%d,%f,%ld,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
-      // myFile.printf("%d,%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", 0, 0, 0, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
-      myFile.printf("%d,%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", 0, 0, 0, 0.0, 0.0, 0.0, 0.0, gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
+      myFile.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%s,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, rollString.c_str(), 0.0, 0.0, 0, 0); // last tow values as placeholders
+      Serial.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%s,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, rollString.c_str(), 0.0, 0.0, 0, 0); // last tow values as placeholders
+
+      for (int i = 0; i < 10; i++){
+        Roll[i] = 400;
+      }
+      count = 0;
+      rollString.clear();
 
       ESP_LOGI(TAG_SD, "Data appended to file.");
       myFile.close();
@@ -182,7 +224,7 @@ void SD_Card_Task(void *pvParameters) {
     }
     ESP_LOGI(TAG_SD, "High water mark of SD_Card_Task: %d", uxTaskGetStackHighWaterMark(NULL));
 
-    vTaskDelay(200 / portTICK_PERIOD_MS);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
