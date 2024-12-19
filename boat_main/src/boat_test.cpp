@@ -172,6 +172,7 @@ void SD_Card_Task(void *pvParameters) {
 
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
       myFile.printf("%d,%f,%ld,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
+      Serial.printf("%d,%f,%ld,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, pitch, yaw, 0, 0); // last tow values as placeholders
 
       ESP_LOGI(TAG_SD, "Data appended to file.");
       myFile.close();
@@ -233,8 +234,6 @@ void ePaper_Task(void *pvParameters) {
 
     double scaledRoll = tanh(k * roll) / tanh(k * maxAngle);
     int rectWidth = (int)(scaledRoll * (EPD_2in13_V4_HEIGHT / 2));
-
-    Serial.printf("Roll: %.2f, Scaled Roll: %.2f, Rect Width: %d\n", roll, scaledRoll, rectWidth);
 
     // Clear the previous rectangle
     Paint_ClearWindows(0, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2 - 2, EPD_2in13_V4_HEIGHT, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2 + 2, WHITE);
