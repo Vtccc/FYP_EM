@@ -24,8 +24,6 @@ static const char *TAG_EPAPER = "EPaper_Task";
 // GPS
 static const int RXPin = 41, TXPin = 42;
 static const uint32_t GPSBaud = 38400;
-double hdop, lat, lng, speed, course;
-int satellites_value, age, month, day, year, hour, minute, second, centisecond;
 
 // The TinyGPSPlus object
 TinyGPSPlus gps;
@@ -35,10 +33,10 @@ EspSoftwareSerial::UART ss;
 
 // IMU
 Adafruit_ICM20948 icm;
+String rollsString = "";
 double ax, ay, az;
 double gx, gy, gz;
 double roll, pitch, yaw;
-String rollString = "";
 
 // Compass
 int compass_azimuth;
@@ -46,15 +44,15 @@ int compass_azimuth;
 // SD Card
 #define PIN_SPI_CS 10 // The ESP32 pin GPIO5
 File myFile;
-double Roll[10] = {400,400,400,400,400,400,400,400,400,400};
 int count = 0;
+double rolls[10] = {400, 400, 400, 400, 400, 400, 400, 400, 400, 400};
 
-String AtoS(double* array, size_t size)
+String arrayToString(double *array, size_t size)
 {
   String result = "[";
   for (size_t i = 0; i < size; ++i)
   {
-    result += String(array[i],2);
+    result += String(array[i], 2);
     if (i < size - 1)
     {
       result += ",";
@@ -69,27 +67,39 @@ void displayInfo()
   static char logBuffer[256];
   static char satellites[16], location[32], date[16], time[16];
 
-  if (gps.satellites.isValid()) {
+  if (gps.satellites.isValid())
+  {
     sprintf(satellites, "%d", gps.satellites.value());
-  } else {
+  }
+  else
+  {
     strcpy(satellites, "INVALID");
   }
 
-  if (gps.location.isValid()) {
+  if (gps.location.isValid())
+  {
     sprintf(location, "%.6f,%.6f", gps.location.lat(), gps.location.lng());
-  } else {
+  }
+  else
+  {
     strcpy(location, "INVALID");
   }
 
-  if (gps.date.isValid()) {
+  if (gps.date.isValid())
+  {
     sprintf(date, "%d/%d/%d", gps.date.month(), gps.date.day(), gps.date.year());
-  } else {
+  }
+  else
+  {
     strcpy(date, "INVALID");
   }
 
-  if (gps.time.isValid()) {
+  if (gps.time.isValid())
+  {
     sprintf(time, "%02d:%02d:%02d.%02d", gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond());
-  } else {
+  }
+  else
+  {
     strcpy(time, "INVALID");
   }
 
@@ -98,21 +108,26 @@ void displayInfo()
   ESP_LOGI(TAG_GPS, "%s", logBuffer);
 }
 
-void GPS_Task(void *pvParameters) {
+void GPS_Task(void *pvParameters)
+{
   ESP_LOGI(TAG_GPS, "GPS_Task");
   Serial1.begin(GPSBaud, SERIAL_8N1, RXPin, TXPin);
-  while (true) {
-    while (Serial1.available()) {
-      if (gps.encode(Serial1.read())) {
-        displayInfo();
+  while (true)
+  {
+    while (Serial1.available())
+    {
+      if (gps.encode(Serial1.read()))
+      {
+        // displayInfo();
       }
     }
-    ESP_LOGI(TAG_GPS, "High water mark of GPS_Task: %d", uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelay(200 / portTICK_PERIOD_MS);
+
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
-void IMU_Task(void *pvParameters) {
+void IMU_Task(void *pvParameters)
+{
   ESP_LOGI(TAG_IMU, "IMU_Task");
 
   Wire.begin(21, 20);
@@ -120,7 +135,8 @@ void IMU_Task(void *pvParameters) {
 
   sensors_event_t accel, gyro, temp;
 
-  while (true) {
+  while (true)
+  {
     // Get sensor events
     icm.getEvent(&accel, &gyro, &temp);
 
@@ -134,49 +150,35 @@ void IMU_Task(void *pvParameters) {
     gz = gyro.gyro.z;
 
     // Compute Euler angles (roll, pitch, yaw)
-    roll = atan2(ay, az) * 180.0 / PI;  // Roll from accelerometer
-    pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI; // Pitch from accelerometer
+    roll = atan2(ay, az) * 180.0 / PI;                        
+    pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI; 
     yaw += (gz * 0.01);
-  
-    Roll[count] = roll;
-    Serial.printf("Roll save: %f \n", roll);
-    
-    if (count < 10)
-    {
-      count++;
-    }
-    else
-    {
-      count = 0;
-    }
 
-    
+    // Store roll values during 1 second
+    rolls[count++ % 10] = roll;
 
-    // Log the data
-    // Serial.printf("Roll: %.2f, Pitch: %.2f, Yaw: %.2f\n", roll, pitch, yaw);
-
-    ESP_LOGI(TAG_IMU, "Accel (m/s^2): %.2f, %.2f, %.2f", ax, ay, az);
-    ESP_LOGI(TAG_IMU, "Gyro (rps): %.2f, %.2f, %.2f", gx, gy, gz);
-
-    ESP_LOGI(TAG_IMU, "High water mark of IMU_Task: %d", uxTaskGetStackHighWaterMark(NULL));
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
-void SD_Card_Task(void *pvParameters) {
+void SD_Card_Task(void *pvParameters)
+{
   SPIClass myspi = SPIClass(HSPI);
   myspi.begin(12, 13, 11, 10);
-  while (!SD.begin(10)){
-    ESP_LOGE(TAG_SD, "SD CARD FAILED, OR NOT PRESENT! Retrying...");
+  while (!SD.begin(10))
+  {
+    Serial.println(F("SD Card failed, or not present"));
     vTaskDelay(500 / portTICK_PERIOD_MS); // Wait for 1 second before retrying
   }
   ESP_LOGI(TAG_SD, "SD CARD OK!");
   // Find the smallest available file number using C style file functions
   int fileNumber = 0;
   char filename[30];
-  while (true) {
+  while (true)
+  {
     sprintf(filename, "/sailing_data%03d.txt", fileNumber);
-    if (!SD.exists(filename)) {
+    if (!SD.exists(filename))
+    {
       myFile = SD.open(filename, FILE_WRITE);
       myFile.close();
       break;
@@ -184,65 +186,58 @@ void SD_Card_Task(void *pvParameters) {
     fileNumber++;
   }
 
-  // int centiseconds = 0;
-  // int seconds = 0; 
-  // int previousSeconds = 0;
-
-  while (true) {
-    // Serial.println("SD_Card_Task");
-    if (SD.exists(filename)) {
+  while (true)
+  {
+    if (SD.exists(filename))
+    {
       Serial.println(F("File exists on SD Card. Now appending data to it."));
       // create a new file by opening a new file and immediately close it
       myFile = SD.open(filename, FILE_APPEND);
 
-      // Increment centiseconds
-      // seconds = gps.time.second();
-      // if (seconds != previousSeconds){
-      //   previousSeconds = seconds;
-      //   centiseconds = 0;
-      // }else{
-      //   centiseconds += 10;
-      // }
-
-      size_t rollSize = sizeof(Roll)/sizeof(Roll[0]);
-      rollString = AtoS(Roll, rollSize);
+      size_t rollsSize = sizeof(rolls) / sizeof(rolls[0]);
+      rollsString = arrayToString(rolls, rollsSize);
 
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
-      myFile.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%s,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, rollString.c_str(), 0.0, 0.0, 0, 0); // last tow values as placeholders
-      Serial.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%s,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, rollString.c_str(), 0.0, 0.0, 0, 0); // last tow values as placeholders
+      myFile.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%s,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, rollsString.c_str(), 0.0, 0.0, 0, 0); // pitch, yaw = 0. Last tow values as placeholders
 
-      for (int i = 0; i < 10; i++){
-        Roll[i] = 400;
+      // Reset the rolls array and count
+      for (int i = 0; i < 10; i++)
+      {
+        rolls[i] = 400;
       }
-      count = 0;
-      rollString.clear();
 
-      ESP_LOGI(TAG_SD, "Data appended to file.");
+      count = 0;
+      rollsString.clear();
+
+      Serial.println(F("Data appended to file."));
       myFile.close();
-    } else {
-      ESP_LOGE(TAG_SD, "File %s does not exist on SD Card.", filename);
     }
-    ESP_LOGI(TAG_SD, "High water mark of SD_Card_Task: %d", uxTaskGetStackHighWaterMark(NULL));
+    else
+    {
+      Serial.println(F("File does not exist on SD Card."));
+    }
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
-void Compass_Task(void *pvParameters) {
+void Compass_Task(void *pvParameters)
+{
   QMC5883LCompass compass;
   compass.init();
-  while (1) {
+  while (1)
+  {
     // Read compass values
     compass.read();
 
     // Return Azimuth reading
     compass_azimuth = compass.getAzimuth();
-    ESP_LOGI(TAG_COMPASS, "Compass_Task, Azimuth: %d", compass_azimuth);
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
-void ePaper_Task(void *pvParameters) {
+void ePaper_Task(void *pvParameters)
+{
   const int rectHeight = 40;
   const int lineLength = 60;
   const double maxAngle = 50.0;
@@ -251,29 +246,30 @@ void ePaper_Task(void *pvParameters) {
   DEV_Module_Init();
 
   EPD_2in13_V4_Init();
-	EPD_2in13_V4_Clear();
-  
+  EPD_2in13_V4_Clear();
+
   // Create a new image cache
-	UBYTE *BlackImage;
-	UWORD Imagesize = ((EPD_2in13_V4_WIDTH % 8 == 0) ? (EPD_2in13_V4_WIDTH / 8) : (EPD_2in13_V4_WIDTH / 8 + 1)) * EPD_2in13_V4_HEIGHT;
-	if ((BlackImage = (UBYTE *)malloc(Imagesize)) == NULL)
-	{
-		printf("Failed to apply for black memory...\r\n");
-		while (1)
-			;
-	}
-  printf("Paint_NewImage\r\n");
-	Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
-	Paint_Clear(WHITE);
+  UBYTE *BlackImage;
+  UWORD Imagesize = ((EPD_2in13_V4_WIDTH % 8 == 0) ? (EPD_2in13_V4_WIDTH / 8) : (EPD_2in13_V4_WIDTH / 8 + 1)) * EPD_2in13_V4_HEIGHT;
+  if ((BlackImage = (UBYTE *)malloc(Imagesize)) == NULL)
+  {
+    Serial.println(F("Failed to apply for black memory..."));
+    while (1)
+      ;
+  }
+  Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
+  Paint_Clear(WHITE);
 
   Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
-	Debug("Partial refresh\r\n");
-	Paint_SelectImage(BlackImage);
+  Paint_SelectImage(BlackImage);
 
-  while (true) {
+  while (true)
+  {
     // Implenment non-linear scaling of roll to rectWidth
-    if (roll < -maxAngle) roll = -maxAngle;
-    if (roll > maxAngle) roll = maxAngle;
+    if (roll < -maxAngle)
+      roll = -maxAngle;
+    if (roll > maxAngle)
+      roll = maxAngle;
 
     double scaledRoll = tanh(k * roll) / tanh(k * maxAngle);
     int rectWidth = (int)(scaledRoll * (EPD_2in13_V4_HEIGHT / 2));
@@ -283,7 +279,7 @@ void ePaper_Task(void *pvParameters) {
 
     // Draw the new rectangle and center line
     Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    Paint_DrawLine(EPD_2in13_V4_HEIGHT / 2 ,EPD_2in13_V4_WIDTH / 2 - lineLength / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + lineLength / 2, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    Paint_DrawLine(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - lineLength / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + lineLength / 2, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
     // Partial refresh of the display
     EPD_2in13_V4_Display_Partial(BlackImage);
@@ -292,17 +288,17 @@ void ePaper_Task(void *pvParameters) {
   }
 }
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   xTaskCreate(GPS_Task, TAG_GPS, 4096, NULL, 10, NULL);
   xTaskCreate(IMU_Task, TAG_IMU, 4096, NULL, 11, NULL);
   xTaskCreate(SD_Card_Task, TAG_SD, 8192, NULL, 1, NULL);
   xTaskCreate(Compass_Task, TAG_COMPASS, 4096, NULL, 1, NULL);
   xTaskCreate(ePaper_Task, TAG_EPAPER, 4096, NULL, 1, NULL);
-
-  ESP_LOGI("setup", "setup");
 }
 
-void loop() {
+void loop()
+{
   vTaskDelete(NULL);
 }
