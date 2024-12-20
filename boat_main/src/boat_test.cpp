@@ -150,12 +150,18 @@ void IMU_Task(void *pvParameters)
     gz = gyro.gyro.z;
 
     // Compute Euler angles (roll, pitch, yaw)
-    roll = atan2(ay, az) * 180.0 / PI;                        
+    roll = -(atan2(ay, az) * 180.0 / PI);                        
     pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI; 
     yaw += (gz * 0.01);
 
     // Store roll values during 1 second
     rolls[count++ % 10] = roll;
+    for (int i = 0; i < 10; i++)
+    {
+      Serial.printf("%f," ,rolls[i]);
+    }
+    Serial.printf("\n");
+  
 
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
@@ -199,7 +205,8 @@ void SD_Card_Task(void *pvParameters)
 
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
       myFile.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%s,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, rollsString.c_str(), 0.0, 0.0, 0, 0); // pitch, yaw = 0. Last tow values as placeholders
-
+      Serial.printf("%s\n",rollsString.c_str());
+      
       // Reset the rolls array and count
       for (int i = 0; i < 10; i++)
       {
@@ -271,7 +278,7 @@ void ePaper_Task(void *pvParameters)
     if (roll > maxAngle)
       roll = maxAngle;
 
-    double scaledRoll = tanh(k * roll) / tanh(k * maxAngle);
+    double scaledRoll = tanh(k * -roll) / tanh(k * maxAngle);
     int rectWidth = (int)(scaledRoll * (EPD_2in13_V4_HEIGHT / 2));
 
     // Clear the previous rectangle
