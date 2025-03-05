@@ -7,6 +7,8 @@
 #include "SD.h"
 #include <QMC5883LCompass.h>
 #include "SPI.h"
+#include "esp_sntp.h"
+#include "esp_timer.h"
 
 // E-paper library
 #include "DEV_Config.h"
@@ -46,6 +48,21 @@ int compass_azimuth;
 File myFile;
 int count = 0;
 double rolls[10] = {400, 400, 400, 400, 400, 400, 400, 400, 400, 400};
+
+// RTC
+int64_t get_current_time_us() {
+    return esp_timer_get_time();
+}
+
+// Function to format time as a string
+String get_formatted_time() {
+    int64_t current_time_us = get_current_time_us();
+    int64_t seconds = current_time_us / 1000000;
+    int64_t microseconds = current_time_us % 1000000;
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "%lld.%06lld", seconds, microseconds);
+    return String(buffer);
+}
 
 String arrayToString(double *array, size_t size)
 {
@@ -155,13 +172,13 @@ void IMU_Task(void *pvParameters)
     yaw += (gz * 0.01);
 
     // Store roll values during 1 second
-    rolls[count++ % 10] = roll;
-    for (int i = 0; i < 10; i++)
-    {
-      Serial.printf("%f," ,rolls[i]);
-    }
-    Serial.printf("\n");
-  
+    // rolls[count++ % 10] = roll;
+    // for (int i = 0; i < 10; i++)
+    // {
+    //   Serial.printf("%f," ,rolls[i]);
+    // }
+    // Serial.printf("\n");
+    Serial.printf("%f,",roll);
 
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
@@ -200,21 +217,28 @@ void SD_Card_Task(void *pvParameters)
       // create a new file by opening a new file and immediately close it
       myFile = SD.open(filename, FILE_APPEND);
 
-      size_t rollsSize = sizeof(rolls) / sizeof(rolls[0]);
-      rollsString = arrayToString(rolls, rollsSize);
+      // size_t rollsSize = sizeof(rolls) / sizeof(rolls[0]);
+      // rollsString = arrayToString(rolls, rollsSize);
+
+      // Get current time
+      String current_time = get_formatted_time();
+
+      // Print time to Serial
+      Serial.print("Current Time: ");
+      Serial.println(current_time);
 
       // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
-      myFile.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%s,%f,%f,%u,%d\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, rollsString.c_str(), 0.0, 0.0, 0, 0); // pitch, yaw = 0. Last tow values as placeholders
-      Serial.printf("%s\n",rollsString.c_str());
+      myFile.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d,%s\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, 0.0, 0.0, 0, 0, current_time.c_str()); // pitch, yaw = 0. Last tow values as placeholders
+      Serial.printf("%f\n",roll);
       
       // Reset the rolls array and count
-      for (int i = 0; i < 10; i++)
-      {
-        rolls[i] = 400;
-      }
+      // for (int i = 0; i < 10; i++)
+      // {
+      //   rolls[i] = 400;
+      // }
 
-      count = 0;
-      rollsString.clear();
+      // count = 0;
+      // rollsString.clear();
 
       Serial.println(F("Data appended to file."));
       myFile.close();
@@ -224,7 +248,7 @@ void SD_Card_Task(void *pvParameters)
       Serial.println(F("File does not exist on SD Card."));
     }
 
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS); // Adjust delay to ensure 10 records per second
   }
 }
 
