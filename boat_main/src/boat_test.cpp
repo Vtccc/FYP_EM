@@ -188,13 +188,14 @@ void SD_Card_Task(void *pvParameters)
 {
   SPIClass myspi = SPIClass(HSPI);
   myspi.begin(12, 13, 11, 10);
-  while (!SD.begin(10))
+  while (!SD.begin(10)) 
   {
     Serial.println(F("SD Card failed, or not present"));
     vTaskDelay(500 / portTICK_PERIOD_MS); // Wait for 1 second before retrying
   }
   ESP_LOGI(TAG_SD, "SD CARD OK!");
-  // Find the smallest available file number using C style file functions
+
+  // Find the smallest available file number
   int fileNumber = 0;
   char filename[30];
   while (true)
@@ -202,54 +203,64 @@ void SD_Card_Task(void *pvParameters)
     sprintf(filename, "/sailing_data%03d.txt", fileNumber);
     if (!SD.exists(filename))
     {
-      myFile = SD.open(filename, FILE_WRITE);
-      myFile.close();
       break;
     }
     fileNumber++;
   }
 
+  // Open the file and write the header
+  myFile = SD.open(filename, FILE_WRITE);
+  if (!myFile)
+  {
+    Serial.println(F("Failed to open file!"));
+    vTaskDelete(NULL);
+  }
+
+  // Write file header
+  myFile.println("{");
+  myFile.println("refresh_rate=10;");
+  myFile.println("version=1.0;");
+  myFile.println("format=[timestamp,gps.satellites,gps.hdop,gps.location.age,gps.lat,gps.lng,gps.speed,gps.course,gps.month,gps.day,gps.year,gps.hour,gps.minute,gps.second,gps.centisecond,compass,roll,pitch,yaw]");
+  myFile.println("}");
+  myFile.flush(); // Ensure header is written
+
   while (true)
   {
-    if (SD.exists(filename))
-    {
-      Serial.println(F("File exists on SD Card. Now appending data to it."));
-      // create a new file by opening a new file and immediately close it
-      myFile = SD.open(filename, FILE_APPEND);
+    // Get current time
+    String current_time = get_formatted_time();
 
-      // size_t rollsSize = sizeof(rolls) / sizeof(rolls[0]);
-      // rollsString = arrayToString(rolls, rollsSize);
+    // Prepare data to write
+    size_t rollsSize = sizeof(rolls) / sizeof(rolls[0]);
+    rollsString = arrayToString(rolls, rollsSize);
 
-      // Get current time
-      String current_time = get_formatted_time();
+    // Write data to file
+    myFile.printf("%s,%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f\n",
+                  current_time.c_str(), gps.satellites.value(), gps.hdop.hdop(), gps.location.age(),
+                  gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(),
+                  gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(),
+                  gps.time.minute(), gps.time.second(), gps.time.centisecond(),
+                  compass_azimuth, roll, pitch, yaw);
 
-      // Print time to Serial
-      Serial.print("Current Time: ");
-      Serial.println(current_time);
+    // Flush data to SD card
+    myFile.flush();
 
-      // printf to the file as a csv: ax, ay, az, gx, gy, gz, gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), WIND_DEGREE, WIND_REGION
-      myFile.printf("%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%u,%d,%s\n", gps.satellites.value(), gps.hdop.hdop(), gps.location.age(), gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(), gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(), gps.time.minute(), gps.time.second(), gps.time.centisecond(), compass_azimuth, roll, 0.0, 0.0, 0, 0, current_time.c_str()); // pitch, yaw = 0. Last tow values as placeholders
-      Serial.printf("%f\n",roll);
-      
-      // Reset the rolls array and count
-      // for (int i = 0; i < 10; i++)
-      // {
-      //   rolls[i] = 400;
-      // }
+    // Print time to Serial
+    Serial.print("Current Time: ");
+    Serial.println(current_time);
 
-      // count = 0;
-      // rollsString.clear();
-
-      Serial.println(F("Data appended to file."));
-      myFile.close();
-    }
-    else
-    {
-      Serial.println(F("File does not exist on SD Card."));
-    }
+    // Reset the rolls array and count
+    // for (int i = 0; i < 10; i++)
+    // {
+    //   rolls[i] = 400;
+    // }
+    // count = 0;
+    // rollsString.clear();
 
     vTaskDelay(100 / portTICK_PERIOD_MS); // Adjust delay to ensure 10 records per second
   }
+
+  // Close the file (this will never be reached in this example)
+  myFile.close();
 }
 
 void Compass_Task(void *pvParameters)
