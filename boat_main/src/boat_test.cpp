@@ -139,7 +139,7 @@ void GPS_Task(void *pvParameters)
       }
     }
 
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -218,7 +218,7 @@ void SD_Card_Task(void *pvParameters)
 
   // Write file header
   myFile.println("{");
-  myFile.println("refresh_rate=10;");
+  myFile.println("refreshRate=10;");
   myFile.println("version=1.0;");
   myFile.println("format=[timestamp,gps.satellites,gps.hdop,gps.location.age,gps.lat,gps.lng,gps.speed,gps.course,gps.month,gps.day,gps.year,gps.hour,gps.minute,gps.second,gps.centisecond,compass,roll,pitch,yaw]");
   myFile.println("}");
