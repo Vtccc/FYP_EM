@@ -3,19 +3,25 @@
 #include <TinyGPSPlus.h>
 #include <SoftwareSerial.h>
 #include <Wire.h>
-#include <Adafruit_ICM20948.h>
+// #include <Adafruit_ICM20948.h>
 #include "SD.h"
 #include <QMC5883LCompass.h>
 #include "SPI.h"
 #include "esp_sntp.h"
 #include "esp_timer.h"
+#include "IMU.h"
+#include "registers.h"
 
-// E-paper library
-#include "DEV_Config.h"
-#include "EPD.h"
-#include "GUI_Paint.h"
-#include "ImageData.h"
-#include <stdlib.h>
+#include "LCDD.h"
+
+#include "BLEDevice.h"
+
+// // E-paper library
+// #include "DEV_Config.h"
+// #include "EPD.h"
+// #include "GUI_Paint.h"
+// #include "ImageData.h"
+// #include <stdlib.h>
 
 static const char *TAG_GPS = "GPS_Task";
 static const char *TAG_IMU = "IMU_Task";
@@ -24,7 +30,7 @@ static const char *TAG_COMPASS = "Compass_Task";
 static const char *TAG_EPAPER = "EPaper_Task";
 
 // GPS
-static const int RXPin = 41, TXPin = 42;
+static const int RXPin = 4, TXPin = 5;
 static const uint32_t GPSBaud = 38400;
 
 // The TinyGPSPlus object
@@ -34,7 +40,10 @@ TinyGPSPlus gps;
 EspSoftwareSerial::UART ss;
 
 // IMU
-Adafruit_ICM20948 icm;
+#define IMU_SDA 6
+#define IMU_SCL 7
+#define IMU_DRDY 12
+ICM42688 IMU(Wire, 0x68, IMU_SDA, IMU_SCL);
 String rollsString = "";
 double ax, ay, az;
 double gx, gy, gz;
@@ -53,6 +62,18 @@ double rolls[10] = {400, 400, 400, 400, 400, 400, 400, 400, 400, 400};
 int64_t get_current_time_us() {
     return esp_timer_get_time();
 }
+
+//BLU
+#define BUTTON_PIN 14
+#define DEBOUNCE_DELAY 50
+
+static BLEDevice *ThisDevice;
+static BLEUUID ServiceUUID((uint16_t)0xFEA6);
+static BLEUUID CommandWriteCharacteristicUUID("b5f90072-aa8d-11e3-9046-0002a5d5c51b");
+static bool ItsOn = false;
+static bool bleInitialized = false;
+
+SemaphoreHandle_t sdMutex;
 
 // Function to format time as a string
 String get_formatted_time() {
@@ -143,45 +164,104 @@ void GPS_Task(void *pvParameters)
   }
 }
 
-void IMU_Task(void *pvParameters)
-{
+void IMU_Task(void *pvParameters) {
   ESP_LOGI(TAG_IMU, "IMU_Task");
 
-  Wire.begin(21, 20);
-  icm.begin_I2C(0x68, &Wire);
 
-  sensors_event_t accel, gyro, temp;
+  Wire.begin(IMU_SDA, IMU_SCL);
+  int status = IMU.begin();
+  if (status < 0) {
+    ESP_LOGE(TAG_IMU, "IMU 初始化失败: %d", status);
+    vTaskDelete(NULL);
+  }
 
-  while (true)
-  {
-    // Get sensor events
-    icm.getEvent(&accel, &gyro, &temp);
+  IMU.setAccelFS(ICM42688::gpm8);    // ±8G
+  IMU.setGyroFS(ICM42688::dps500);   // ±500dps
+  IMU.setAccelODR(ICM42688::odr12_5);
+  IMU.setGyroODR(ICM42688::odr12_5);
 
-    // Store accelerometer and gyroscope values
-    ax = accel.acceleration.x;
-    ay = accel.acceleration.y;
-    az = accel.acceleration.z;
+  while (true) {
 
-    gx = gyro.gyro.x;
-    gy = gyro.gyro.y;
-    gz = gyro.gyro.z;
+    IMU.getAGT();
 
-    // Compute Euler angles (roll, pitch, yaw)
-    roll = -(atan2(ay, az) * 180.0 / PI);                        
-    pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI; 
-    yaw += (gz * 0.01);
+ 
+    ax = IMU.accX() * 9.81;        // m/s²
+    ay = IMU.accY() * 9.81;
+    az = IMU.accZ() * 9.81;
+    
+    gx = IMU.gyrX() * (M_PI / 180.0); // rad/s
+    gy = IMU.gyrY() * (M_PI / 180.0);
+    gz = IMU.gyrZ() * (M_PI / 180.0);
 
-    // Store roll values during 1 second
-    // rolls[count++ % 10] = roll;
-    // for (int i = 0; i < 10; i++)
-    // {
-    //   Serial.printf("%f," ,rolls[i]);
-    // }
-    // Serial.printf("\n");
-    Serial.printf("%f,",roll);
+
+    roll = -(atan2(ay, az) * 180.0 / M_PI);
+    pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / M_PI;
+    yaw += (gz * 0.01);           // 积分得到偏航角
+
+   
+    Serial.printf("Roll: %.2f, Pitch: %.2f\n", roll, pitch);
 
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
+}
+
+void Button_Task(void *pvParameters) {
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    bool lastState = HIGH;
+    bool pressed = false;
+    unsigned long lastDebounceTime = 0;
+
+    while(true) {
+        bool currentState = digitalRead(BUTTON_PIN);
+        
+        if (currentState != lastState) {
+            lastDebounceTime = millis();
+        }
+
+        if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY) {
+            if (currentState == LOW && !pressed) {
+                pressed = true;
+                
+                // 执行BLE操作
+                if (bleInitialized && !ItsOn) {
+                    BLEScan* ThisScan = ThisDevice->getScan();
+                    ThisScan->clearResults();
+                    ThisScan->start(3, false);
+                    
+                    for(int i = 0; i < ThisScan->getResults().getCount(); i++) {
+                        BLEAdvertisedDevice device = ThisScan->getResults().getDevice(i);
+                        if(device.haveServiceUUID() && device.isAdvertisingService(ServiceUUID)) {
+                            BLEClient* ThisClient = ThisDevice->createClient();
+                            if(ThisClient->connect(&device)) {
+                                BLERemoteCharacteristic* pChar = ThisClient->getService(ServiceUUID)
+                                    ->getCharacteristic(CommandWriteCharacteristicUUID);
+                                    
+                                if(pChar) {
+                                    uint8_t cmdOn[] = {0x03, 0x01, 0x01, 0x01};
+                                    pChar->writeValue(cmdOn, sizeof(cmdOn), true);
+                                    ItsOn = true;
+                                    
+                                    // 记录到SD卡
+                                    if(xSemaphoreTake(sdMutex, portMAX_DELAY)) {
+                                        myFile.printf("%s,ButtonPressed,1\n", get_formatted_time().c_str());
+                                        myFile.flush();
+                                        xSemaphoreGive(sdMutex);
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    ThisScan->clearResults();
+                }
+            } else if (currentState == HIGH && pressed) {
+                pressed = false;
+            }
+        }
+        
+        lastState = currentState;
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
 }
 
 void SD_Card_Task(void *pvParameters)
@@ -217,15 +297,21 @@ void SD_Card_Task(void *pvParameters)
   }
 
   // Write file header
-  myFile.println("{");
-  myFile.println("refreshRate=10;");
-  myFile.println("version=1.0;");
-  myFile.println("format=[timestamp,gps.satellites,gps.hdop,gps.location.age,gps.lat,gps.lng,gps.speed,gps.course,gps.month,gps.day,gps.year,gps.hour,gps.minute,gps.second,gps.centisecond,compass,roll,pitch,yaw]");
-  myFile.println("}");
-  myFile.flush(); // Ensure header is written
+  if(xSemaphoreTake(sdMutex, portMAX_DELAY)) {
+    myFile.println("{");
+    myFile.println("refreshRate=10;");
+    myFile.println("version=1.0;");
+    myFile.println("format=[timestamp,gps.satellites,gps.hdop,gps.location.age,gps.lat,gps.lng,gps.speed,gps.course,gps.month,gps.day,gps.year,gps.hour,gps.minute,gps.second,gps.centisecond,compass,roll,pitch,yaw,button_event]");
+    myFile.println("}");
+    myFile.flush(); // Ensure header is written
 
+    xSemaphoreGive(sdMutex);
+  }
+  
   while (true)
   {
+    if(xSemaphoreTake(sdMutex, portMAX_DELAY)) {
+    // 原有数据记录代码
     // Get current time
     String current_time = get_formatted_time();
 
@@ -234,16 +320,16 @@ void SD_Card_Task(void *pvParameters)
     rollsString = arrayToString(rolls, rollsSize);
 
     // Write data to file
-    myFile.printf("%s,%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f\n",
+    myFile.printf("%s,%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%d\n",
                   current_time.c_str(), gps.satellites.value(), gps.hdop.hdop(), gps.location.age(),
                   gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(),
                   gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(),
                   gps.time.minute(), gps.time.second(), gps.time.centisecond(),
-                  compass_azimuth, roll, pitch, yaw);
+                  compass_azimuth, roll, pitch, yaw, ItsOn ? 1 : 0);
 
     // Flush data to SD card
     myFile.flush();
-
+    xSemaphoreGive(sdMutex);
     // Print time to Serial
     Serial.print("Current Time: ");
     Serial.println(current_time);
@@ -256,6 +342,8 @@ void SD_Card_Task(void *pvParameters)
     // count = 0;
     // rollsString.clear();
 
+            
+    }
     vTaskDelay(100 / portTICK_PERIOD_MS); // Adjust delay to ensure 10 records per second
   }
 
@@ -280,67 +368,105 @@ void Compass_Task(void *pvParameters)
 
 void ePaper_Task(void *pvParameters)
 {
-  const int rectHeight = 40;
-  const int lineLength = 60;
-  const double maxAngle = 50.0;
-  const double k = 0.05; // Non-linear scaling factor
+      const int rectHeight = 1;        
+    const int maxValue = 50;         
+    const double k = 0.05;           
+    const uint16_t bgColor = 0x0000; 
+    const uint16_t fgColor = 0xFFFF; 
 
-  DEV_Module_Init();
+    
+    const uint16_t centerX = (23 + 36) / 2; 
+    const uint16_t centerY = 191 / 2;       
 
-  EPD_2in13_V4_Init();
-  EPD_2in13_V4_Clear();
 
-  // Create a new image cache
-  UBYTE *BlackImage;
-  UWORD Imagesize = ((EPD_2in13_V4_WIDTH % 8 == 0) ? (EPD_2in13_V4_WIDTH / 8) : (EPD_2in13_V4_WIDTH / 8 + 1)) * EPD_2in13_V4_HEIGHT;
-  if ((BlackImage = (UBYTE *)malloc(Imagesize)) == NULL)
-  {
-    Serial.println(F("Failed to apply for black memory..."));
-    while (1)
-      ;
-  }
-  Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
-  Paint_Clear(WHITE);
+    LCDD display(1, 2, 3, 4, 5, 6);
+    display.Initial_ST7305();
+    display.Clear_Screen(bgColor);
 
-  Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
-  Paint_SelectImage(BlackImage);
 
-  while (true)
-  {
-    // Implenment non-linear scaling of roll to rectWidth
-    if (roll < -maxAngle)
-      roll = -maxAngle;
-    if (roll > maxAngle)
-      roll = maxAngle;
+    int prevWidth = 0;
+    int16_t prevStartX = 0, prevEndX = 0;
 
-    double scaledRoll = tanh(k * -roll) / tanh(k * maxAngle);
-    int rectWidth = (int)(scaledRoll * (EPD_2in13_V4_HEIGHT / 2));
+    while(true) {
 
-    // Clear the previous rectangle
-    Paint_ClearWindows(0, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2 - 2, EPD_2in13_V4_HEIGHT, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2 + 2, WHITE);
+        double clampedValue = constrain(roll, -maxValue, maxValue);
+        
+  
+        double scaledValue = tanh(k * -clampedValue) / tanh(k * maxValue);
+        int dynamicWidth = scaledValue * 60; 
+        uint16_t rectWidth = abs(dynamicWidth);
 
-    // Draw the new rectangle and center line
-    Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    Paint_DrawLine(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - lineLength / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + lineLength / 2, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+        
+        uint16_t newStartX = centerX - rectWidth/2;
+        uint16_t newEndX = newStartX + rectWidth - 1;
 
-    // Partial refresh of the display
-    EPD_2in13_V4_Display_Partial(BlackImage);
+        
+        if(prevWidth > 0) {
+            display.Draw_Rectangle(
+                prevStartX, 
+                centerY - rectHeight/2,
+                prevEndX,
+                centerY + rectHeight/2 - 1,
+                bgColor
+            );
+        }
 
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
+        
+        display.Draw_Rectangle(
+            newStartX,
+            centerY - rectHeight/2,
+            newEndX,
+            centerY + rectHeight/2 - 1,
+            fgColor
+        );
+
+       
+        display.Draw_Rectangle(
+            centerX - 2,
+            centerY - 1,
+            centerX + 2,
+            centerY + 1,
+            fgColor
+        );
+
+        
+        prevWidth = rectWidth;
+        prevStartX = newStartX;
+        prevEndX = newEndX;
+
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
 }
 
 void setup()
 {
+
+  sdMutex = xSemaphoreCreateMutex();
+  ThisDevice = new BLEDevice();
+  ThisDevice->init("SailTracker");
+  ThisDevice->setEncryptionLevel(ESP_BLE_SEC_ENCRYPT);
+  bleInitialized = true;
+
   Serial.begin(115200);
   xTaskCreate(GPS_Task, TAG_GPS, 4096, NULL, 10, NULL);
   xTaskCreate(IMU_Task, TAG_IMU, 4096, NULL, 11, NULL);
   xTaskCreate(SD_Card_Task, TAG_SD, 8192, NULL, 1, NULL);
   xTaskCreate(Compass_Task, TAG_COMPASS, 4096, NULL, 1, NULL);
   xTaskCreate(ePaper_Task, TAG_EPAPER, 4096, NULL, 1, NULL);
+  xTaskCreate(Button_Task, "Button_Task", 4096, NULL, 12, NULL);
 }
 
 void loop()
 {
-  vTaskDelete(NULL);
+  if(ItsOn) {
+        static unsigned long lastKeepAlive = 0;
+        if(millis() - lastKeepAlive > 5000) {
+            // 发送保持活跃命令
+            uint8_t keepAlive[] = {0x01, 0x05};
+            // 需要实现获取characteristic的逻辑
+            // pChar->writeValue(keepAlive, sizeof(keepAlive));
+            lastKeepAlive = millis();
+        }
+    }
+    vTaskDelay(100 / portTICK_PERIOD_MS);
 }

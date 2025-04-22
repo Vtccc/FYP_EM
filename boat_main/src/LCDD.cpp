@@ -1,14 +1,18 @@
-// 定义引脚
-#define TE_PIN   1  // TE 引脚（通常用于帧同步，这里暂时不用）
-#define RES_PIN  2  // 复位引脚
-#define DC_PIN   3  // 数据/命令选择引脚
-#define CS_PIN   4  // 片选引脚
-#define SCLK_PIN 5  // 时钟引脚
-#define SDI_PIN  6  // 数据输入引脚
+// LCDD.cpp
+#include "LCDD.h"
 
-// 初始化屏幕
-void Initial_ST7305() {
-  // 复位屏幕
+LCDD::LCDD(uint8_t te, uint8_t res, uint8_t dc, uint8_t cs, uint8_t sclk, uint8_t sdi)
+  : TE_PIN(te), RES_PIN(res), DC_PIN(dc), CS_PIN(cs), SCLK_PIN(sclk), SDI_PIN(sdi) {
+  pinMode(TE_PIN, OUTPUT);
+  pinMode(RES_PIN, OUTPUT);
+  pinMode(DC_PIN, OUTPUT);
+  pinMode(CS_PIN, OUTPUT);
+  pinMode(SCLK_PIN, OUTPUT);
+  pinMode(SDI_PIN, OUTPUT);
+}
+
+void LCDD::Initial_ST7305() 
+{ // 复位屏幕
   digitalWrite(RES_PIN, HIGH);
   delay(100);
   digitalWrite(RES_PIN, LOW);
@@ -130,24 +134,22 @@ void Initial_ST7305() {
   Write_Command(0x29); // DISPLAY ON
 }
 
-// 写命令
-void Write_Command(uint8_t command) {
-  digitalWrite(DC_PIN, LOW);  // DC = 0 表示命令
-  digitalWrite(CS_PIN, LOW);  // 片选使能
-  shiftOut(SDI_PIN, SCLK_PIN, MSBFIRST, command); // 发送命令
-  digitalWrite(CS_PIN, HIGH); // 片选禁用
+
+void LCDD::Write_Command(uint8_t command) {
+  digitalWrite(DC_PIN, LOW);
+  digitalWrite(CS_PIN, LOW);
+  shiftOut(SDI_PIN, SCLK_PIN, MSBFIRST, command);
+  digitalWrite(CS_PIN, HIGH);
 }
 
-// 写数据
-void Write_Data(uint8_t data) {
-  digitalWrite(DC_PIN, HIGH); // DC = 1 表示数据
-  digitalWrite(CS_PIN, LOW);  // 片选使能
-  shiftOut(SDI_PIN, SCLK_PIN, MSBFIRST, data); // 发送数据
-  digitalWrite(CS_PIN, HIGH); // 片选禁用
+void LCDD::Write_Data(uint8_t data) {
+  digitalWrite(DC_PIN, HIGH);
+  digitalWrite(CS_PIN, LOW);
+  shiftOut(SDI_PIN, SCLK_PIN, MSBFIRST, data);
+  digitalWrite(CS_PIN, HIGH);
 }
 
-// 清屏
-void Clear_Screen(uint16_t color) {
+void LCDD::Clear_Screen(uint16_t color) {
   Write_Command(0x2A); // 设置列地址
   Write_Data(0x17);    // 起始列
   Write_Data(0x24);    // 结束列 (168列)
@@ -170,10 +172,9 @@ void Clear_Screen(uint16_t color) {
   }
 }
 
-
-
-// 绘制长方形
-void Draw_Rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color) {
+// 保持其他绘图函数实现与原始逻辑一致
+void LCDD::Draw_Rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color) 
+{
   Write_Command(0x2A); // 设置列地址
   Write_Data(x1); // 起始列高字节
   // Write_Data(x1 & 0xFF); // 起始列低字节
@@ -200,8 +201,11 @@ void Draw_Rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t
   }
 }
 
-void Draw_Balance_Indicator(int value) {
-    const int centerX = (23+36)/2;           // Middle of screen x
+
+
+void LCDD::Draw_Balance_Indicator(int value) 
+{
+      const int centerX = (23+36)/2;           // Middle of screen x
     const int centerY = 191/2;           // Middle of screen y
     const int rectHeight = 1;        // Height of the rectangles
     const int maxValue = 50;          // Maximum input value (like maxAngle in original)
@@ -228,76 +232,19 @@ void Draw_Balance_Indicator(int value) {
     }
 }
 
-void setup() {
-
-  Serial.begin(115200);
-  Serial.println("0");
-  
-  // 初始化引脚
-  pinMode(TE_PIN, OUTPUT);
-  pinMode(RES_PIN, OUTPUT);
-  pinMode(DC_PIN, OUTPUT);
-  pinMode(CS_PIN, OUTPUT);
-  pinMode(SCLK_PIN, OUTPUT);
-  pinMode(SDI_PIN, OUTPUT);
-
-  // 初始化屏幕
-
-
-  Initial_ST7305();
 
 
 
-  // 清屏为白色
-  Clear_Screen(0xFFFF);
-  Clear_Screen(0x0000); // 0x0000 表示白色
-  // Clear_Screen(0xFFFF);
-  
+void LCDD::Draw_Line(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color) {
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
 
-  // Draw_Rectangle(23, 0, 36, 191, 0xFFFF);
-  Draw_Rectangle(30, 50, 32, 100, 0xFFFF);
-  delay(200);
-  Clear_Screen(0x0000); // 0x0000 表示白色
-  // Clear_Screen(0xFFFF);
-  delay(200);
-
-  // Draw_Rectangle(23, 0, 36, 191, 0xFFFF);
-  Draw_Rectangle(30, 50, 32, 180, 0xFFFF);
-
-  Serial.println("1");
-  while(true)
-  {
-    for (int i = -50; i <= 50; i += 10) {
-        Clear_Screen(0x0000);
-        delay(500);
-        Draw_Balance_Indicator(i);
-        delay(500);
+    while (true) {
+        Draw_Rectangle(x0, y0, x0, y0, color); // 用单像素矩形模拟画点
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
     }
-  delay(500);
-  }
-  Serial.println("2");
-}
-
-
-
-void loop() {
-  // 主循环，可以添加其他逻辑
-  Clear_Screen(0x0000); 
-  Draw_Rectangle(30, 50, 32, 100, 0xFFFF);
-  delay(500);
-  Clear_Screen(0x0000); 
-  delay(500);
-  Draw_Rectangle(30, 50, 32, 180, 0xFFFF);
-  delay(500);
-  Clear_Screen(0x0000);
-  delay(500);
-  Draw_Rectangle(30, 50, 32, 190, 0xFFFF);
-  delay(500);
-  Clear_Screen(0x0000);
-  delay(500);
-  Draw_Rectangle(23, 0, 36, 50, 0xFFFF);
-  Clear_Screen(0x0000);
-  delay(500);
-  Draw_Rectangle(23, 0, 36, 191, 0xFFFF);
-  Serial.println("3");
 }
