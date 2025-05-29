@@ -31,9 +31,11 @@ static BLEUUID ServiceUUID((uint16_t)0xFEA6);
 static BLEUUID CommandWriteCharacteristicUUID("b5f90072-aa8d-11e3-9046-0002a5d5c51b");
 
 // Global BLE objects
-BLEClient* pClient = nullptr;
-BLEScan* pScan = nullptr;
-BLERemoteCharacteristic* pCommandCharacteristic = nullptr;
+static BLEDevice *ThisDevice;
+static BLEClient *ThisClient;
+static BLEScan *ThisScan;
+static BLERemoteCharacteristic* pCommandCharacteristic = nullptr;
+#define ServiceCharacteristic(S, C) ThisClient->getService(S)->getCharacteristic(C)
 
 // Button
 #define BUTTON_PIN 12
@@ -86,7 +88,8 @@ EspSoftwareSerial::UART ss;
 #define IMU_SDA 7  // Changed to match working example
 #define IMU_SCL 8  // Changed to match working example
 #define IMU_DRDY 9
-ICM42688 IMU(Wire, 0x68, IMU_SDA, IMU_SCL);
+TwoWire IMU_Wire = TwoWire(1);
+ICM42688 IMU(IMU_Wire, 0x68, IMU_SDA, IMU_SCL);
 String rollsString = "";
 float ax, ay, az;  // Changed to float to match working example
 float gx, gy, gz;  // Changed to float to match working example
@@ -139,14 +142,14 @@ TaskHandle_t compassTaskHandle = NULL;
 TaskHandle_t lcdTaskHandle = NULL;
 
 // Task priorities
-#define GPS_TASK_PRIORITY 1
-#define IMU_TASK_PRIORITY 3  // Increased priority
+#define GPS_TASK_PRIORITY 2
+#define IMU_TASK_PRIORITY 4  // Increased priority
 #define SD_TASK_PRIORITY 1
 #define COMPASS_TASK_PRIORITY 1
-#define LCD_TASK_PRIORITY 1
+#define LCD_TASK_PRIORITY 3
 
 // Task stack sizes
-#define GPS_TASK_STACK 4096
+#define GPS_TASK_STACK 8192
 #define IMU_TASK_STACK 8192
 #define SD_TASK_STACK 8192
 #define COMPASS_TASK_STACK 4096
@@ -205,10 +208,11 @@ void IMU_Task(void *pvParameters) {
     }
 
     // Initialize I2C
-    Wire.begin(IMU_SDA, IMU_SCL);
-    delay(100);
-
+    // Wire.begin(IMU_SDA, IMU_SCL);
+    // delay(100);
+    
     // Initialize IMU
+    Serial.println("Beginning IMU");
     int status = IMU.begin();
     if (status < 0) {
         Serial.println("IMU initialization unsuccessful");
@@ -219,6 +223,7 @@ void IMU_Task(void *pvParameters) {
         return;
     }
 
+    Serial.println("Configuring IMU");
     // Configure IMU
     IMU.setAccelFS(ICM42688::gpm8);    // ±8G
     IMU.setGyroFS(ICM42688::dps500);   // ±500dps
@@ -379,15 +384,12 @@ void Compass_Task(void *pvParameters)
 
 void LCD_Task(void *pvParameters)
 {
-    // Initialize LCD
-    LCDD lcd(LCD_TE_PIN, LCD_RES_PIN, LCD_DC_PIN, LCD_CS_PIN, LCD_SCLK_PIN, LCD_SDI_PIN);
-    lcd.Initial_ST7305();
-    // lcd.Clear_Screen(0x0000); // Clear screen with black
+
 
     while (true)
     {
         // Clear the screen
-        lcd.Clear_Screen(0x0000);
+        
 
         // Display GPS time at the top
         // char timeStr[9];
@@ -410,7 +412,7 @@ void LCD_Task(void *pvParameters)
         // int rollValue = (int)(roll * 10); // Scale roll for better display
         // lcd.Draw_Balance_Indicator(rollValue);
 
-        vTaskDelay(1000/ portTICK_PERIOD_MS);
+        vTaskDelay(1);
     }
 }
 
@@ -418,147 +420,115 @@ void BLE_Task(void* pvParameters) {
     ESP_LOGI(BLE_TAG, "Starting BLE Task");
     
     // Initialize BLE
-    BLEDevice::init("SailTracker");
-    pClient = BLEDevice::createClient();
-    pClient->setClientCallbacks(new MyClientCallback());
-    pScan = BLEDevice::getScan();
-    pScan->setActiveScan(true);
-    pScan->setInterval(100);
-    pScan->setWindow(99);
-
-    // Try initial connection with retries
-    int retryCount = 0;
-    const int MAX_RETRIES = 3;
+    ThisDevice = new BLEDevice();
+    ThisDevice->init("");
+    ThisDevice->setEncryptionLevel(ESP_BLE_SEC_ENCRYPT);
     
-    while (retryCount < MAX_RETRIES) {
-        ESP_LOGI(BLE_TAG, "Connection attempt %d/%d", retryCount + 1, MAX_RETRIES);
-        if (connectToGoPro()) {
-            ESP_LOGI(BLE_TAG, "Initial connection successful");
-            digitalWrite(LED_BUILTIN, HIGH);
-            break;
-        }
-        retryCount++;
-        if (retryCount < MAX_RETRIES) {
-            ESP_LOGW(BLE_TAG, "Connection failed, retrying in 1 second...");
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-        }
+    ThisClient = ThisDevice->createClient();
+    ThisClient->setClientCallbacks(new MyClientCallback());
+    
+    ThisScan = ThisDevice->getScan();
+    
+    // Initialize button
+    button.attachClick(buttonClickHandler);
+    
+    // Try initial connection
+    if (ScanAndConnect()) {
+        ESP_LOGI(BLE_TAG, "Connected to BLE device successfully");
+        // digitalWrite(LED_BUILTIN, HIGH);
+        // delay(500);
+        // digitalWrite(LED_BUILTIN, LOW);
+    } else {
+        ESP_LOGE(BLE_TAG, "Initial connection failed!");
     }
-
-    if (!isConnected) {
-        ESP_LOGW(BLE_TAG, "Failed to connect after %d attempts", MAX_RETRIES);
-    }
-
+    
     while (true) {
-        // Handle disconnection
-        if (!isConnected) {
-            handleDisconnection();
+        // Handle button events
+        button.tick();
+        
+        // Check connection status
+        if (!ThisClient->isConnected() && isConnected) {
+            ESP_LOGW(BLE_TAG, "Device disconnected!");
+            isConnected = false;
+            isRecording = false;
+            // digitalWrite(LED_BUILTIN, LOW);
+            
+            // Try to reconnect
+            ESP_LOGI(BLE_TAG, "Attempting to reconnect...");
+            if (ScanAndConnect()) {
+                ESP_LOGI(BLE_TAG, "Reconnected successfully");
+            }
         }
-
-        // Handle recording timeout
+        
         if (isRecording) {
-            handleRecordingTimeout();
-        }
+            // Check for recording timeout
+            if (millis() - recordingStartTime >= RECORDING_DURATION) {
+                uint8_t stopCommand[] = {0x03, 0x01, 0x01, 0x00};
+                // sendCommand(stopCommand, sizeof(stopCommand));
+                ServiceCharacteristic(ServiceUUID, CommandWriteCharacteristicUUID)->writeValue({0x03, 0x01, 0x01, 0x00});
 
-        // Send keepalive if needed
-        if (isConnected && isRecording) {
-            handleKeepalive();
-        }
+                // digitalWrite(LED_BUILTIN, LOW);
+                isRecording = false;
+                ESP_LOGI(BLE_TAG, "Recording stopped after 30 seconds");
+            }
+            // Send keepalive
+            else if (millis() - lastKeepaliveTime >= KEEPALIVE_INTERVAL) {
+                uint8_t keepaliveCommand[] = {0x01, 0x05};
+                // sendCommand(keepaliveCommand, sizeof(keepaliveCommand));
+                ServiceCharacteristic(ServiceUUID, CommandWriteCharacteristicUUID)->writeValue({0x01, 0x05});
 
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+                lastKeepaliveTime = millis();
+                ESP_LOGI(BLE_TAG, "Sending keep-alive");
+            }
+        }
+        
+        vTaskDelay(10 / portTICK_PERIOD_MS);
     }
 }
 
-bool connectToGoPro() {
-    if (xSemaphoreTake(bleMutex, portMAX_DELAY) == pdTRUE) {
-        ESP_LOGI(BLE_TAG, "Scanning for GoPro...");
-        BLEScanResults results = pScan->start(5, false);
-        ESP_LOGI(BLE_TAG, "Scan complete. Found %d devices", results.getCount());
-        
-        for (int i = 0; i < results.getCount(); i++) {
-            BLEAdvertisedDevice device = results.getDevice(i);
-            ESP_LOGI(BLE_TAG, "Device %d: %s", i, device.toString().c_str());
-            
-            // Check if device has any service UUIDs
-            if (device.haveServiceUUID()) {
-                ESP_LOGI(BLE_TAG, "Device %d has service UUIDs:", i);
-                for (int j = 0; j < device.getServiceUUIDCount(); j++) {
-                    BLEUUID uuid = device.getServiceUUID(j);
-                    ESP_LOGI(BLE_TAG, "  Service UUID: %s", uuid.toString().c_str());
-                    
-                    // Check if this is our target service
-                    if (uuid.equals(ServiceUUID)) {
-                        ESP_LOGI(BLE_TAG, "Found GoPro device!");
-                        ESP_LOGI(BLE_TAG, "Address: %s", device.getAddress().toString().c_str());
-                        ESP_LOGI(BLE_TAG, "RSSI: %d", device.getRSSI());
-                        
-                        // Connect to device
-                        ESP_LOGI(BLE_TAG, "Attempting to connect...");
-                        if (pClient->connect(&device)) {
-                            ESP_LOGI(BLE_TAG, "Connected to device, getting service...");
-                            
-                            // Get service and characteristic
-                            BLERemoteService* pService = pClient->getService(ServiceUUID);
-                            if (pService) {
-                                ESP_LOGI(BLE_TAG, "Got service, getting characteristic...");
-                                pCommandCharacteristic = pService->getCharacteristic(CommandWriteCharacteristicUUID);
-                                if (pCommandCharacteristic) {
-                                    ESP_LOGI(BLE_TAG, "Got command characteristic!");
-                                    xSemaphoreGive(bleMutex);
-                                    return true;
-                                } else {
-                                    ESP_LOGW(BLE_TAG, "Failed to get command characteristic");
-                                }
-                            } else {
-                                ESP_LOGW(BLE_TAG, "Failed to get service");
-                            }
-                            pClient->disconnect();
-                        } else {
-                            ESP_LOGW(BLE_TAG, "Failed to connect to device");
-                        }
-                    }
-                }
+bool ScanAndConnect(void) {
+    ThisScan->clearResults();
+    ThisScan->start(3, false);
+    for (int i = 0; i < ThisScan->getResults().getCount(); i++) {
+        if (ThisScan->getResults().getDevice(i).haveServiceUUID() && 
+            ThisScan->getResults().getDevice(i).isAdvertisingService(BLEUUID(ServiceUUID))) {
+            ThisScan->stop();
+            if(ThisClient->connect(new BLEAdvertisedDevice(ThisScan->getResults().getDevice(i)))) {
+                isConnected = true;
+                return true;
             }
         }
-        xSemaphoreGive(bleMutex);
     }
     return false;
 }
 
 void sendCommand(uint8_t* command, size_t length) {
-    if (xSemaphoreTake(bleMutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        if (isConnected && pCommandCharacteristic) {
-            pCommandCharacteristic->writeValue(command, length, true);
+    if (xSemaphoreTake(bleMutex, portMAX_DELAY) == pdTRUE) {
+        if (isConnected && pCommandCharacteristic != nullptr) {
+            pCommandCharacteristic->writeValue(command, length);
         }
         xSemaphoreGive(bleMutex);
     }
 }
 
 void buttonClickHandler() {
-    if (!isConnected) {
-        ESP_LOGW(BLE_TAG, "Not connected - attempting to reconnect");
-        if (connectToGoPro()) {
-            ESP_LOGI(BLE_TAG, "Reconnection successful");
-            digitalWrite(LED_BUILTIN, HIGH);
-        }
-    }
-
+    ESP_LOGI(BLE_TAG, "button clicked");
+    // if (isConnected && !isRecording) {
     if (isConnected) {
-        if (!isRecording) {
-            // Start recording command
-            uint8_t startCommand[] = {0x03, 0x01, 0x01, 0x01};
-            sendCommand(startCommand, sizeof(startCommand));
-            isRecording = true;
-            recordingStartTime = millis();
-            digitalWrite(LED_BUILTIN, HIGH);
-            ESP_LOGI(BLE_TAG, "Start recording command sent");
-        } else {
-            // Stop recording command
-            uint8_t stopCommand[] = {0x03, 0x01, 0x01, 0x00};
-            sendCommand(stopCommand, sizeof(stopCommand));
-            isRecording = false;
-            digitalWrite(LED_BUILTIN, LOW);
-            ESP_LOGI(BLE_TAG, "Stop recording command sent");
-        }
+        ESP_LOGI(BLE_TAG, "Button pressed - Sending start command");
+        
+        // Send start recording command
+        uint8_t startCommand[] = {0x03, 0x01, 0x01, 0x01};
+              ServiceCharacteristic(ServiceUUID, CommandWriteCharacteristicUUID)->writeValue({0x03, 0x01, 0x01, 0x01});
+        
+        isRecording = true;
+        digitalWrite(LED_BUILTIN, HIGH);
+        recordingStartTime = millis();
+        ESP_LOGI(BLE_TAG, "Recording started");
+    } else if (!isConnected) {
+        ESP_LOGW(BLE_TAG, "Not connected to device!");
+    } else if (isRecording) {
+        ESP_LOGI(BLE_TAG, "Recording already in progress");
     }
 }
 
@@ -574,9 +544,9 @@ void handleDisconnection() {
             
             // Restart recording if we were in the middle of a session
             if (isRecording) {
-                uint8_t startCommand[] = {0x03, 0x01, 0x01, 0x01};
-                sendCommand(startCommand, sizeof(startCommand));
+                      ServiceCharacteristic(ServiceUUID, CommandWriteCharacteristicUUID)->writeValue({0x03, 0x01, 0x01, 0x01});
                 recordingStartTime = millis(); // Reset timer
+                ESP_LOGI(BLE_TAG, "starting recording at: %d", recordingStartTime);
             }
         }
         lastReconnectAttempt = millis();
@@ -594,8 +564,7 @@ void handleKeepalive() {
 
 void handleRecordingTimeout() {
     if (millis() - recordingStartTime > RECORDING_DURATION) {
-        uint8_t stopCommand[] = {0x03, 0x01, 0x01, 0x00};
-        sendCommand(stopCommand, sizeof(stopCommand));
+          ServiceCharacteristic(ServiceUUID, CommandWriteCharacteristicUUID)->writeValue({0x03, 0x01, 0x01, 0x00});
         isRecording = false;
         digitalWrite(LED_BUILTIN, LOW);
         ESP_LOGI(BLE_TAG, "Recording stopped after timeout");
@@ -630,28 +599,9 @@ String arrayToString(double *array, size_t size) {
 }
 
 void setup() {
+    // pinMode(6, OUTPUT);
     Serial.begin(115200);
     delay(1000);  // Give time for serial to initialize
-    
-    // Check PSRAM using ESP-IDF's function
-    if(psramFound()) {
-        Serial.println("PSRAM found and initialized");
-        // Enable PSRAM
-        if(psramInit()) {
-            Serial.println("PSRAM initialized successfully");
-        } else {
-            Serial.println("PSRAM initialization failed");
-        }
-    } else {
-        Serial.println("Warning: No PSRAM detected - Using internal RAM only");
-        // Adjust task stack sizes for internal RAM
-        #undef IMU_TASK_STACK
-        #undef SD_TASK_STACK
-        #undef LCD_TASK_STACK
-        #define IMU_TASK_STACK 4096
-        #define SD_TASK_STACK 4096
-        #define LCD_TASK_STACK 4096
-    }
     
     Serial.println("Starting setup...");
     
@@ -659,6 +609,12 @@ void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LOW);
     
+    // Initialize LCD
+    LCDD lcd(LCD_TE_PIN, LCD_RES_PIN, LCD_DC_PIN, LCD_CS_PIN, LCD_SCLK_PIN, LCD_SDI_PIN);
+    // lcd.Initial_ST7305();
+    // lcd.Clear_Screen(0x0000); // Clear screen with black
+    lcd.Clear_Screen(0xffff);
+
     // Initialize BLE mutex
     bleMutex = xSemaphoreCreateMutex();
     if (bleMutex == NULL) {
@@ -669,25 +625,26 @@ void setup() {
     // Setup button
     button.attachClick(buttonClickHandler);
     
-    // Create BLE task
-    // xTaskCreatePinnedToCore(BLE_Task, "BLE_Task",8192,NULL,3,NULL,2);
+    // Create BLE task on core 0 with high priority
+    xTaskCreatePinnedToCore(BLE_Task, "BLE_Task", 8192, NULL, 3, NULL, 0);
+    // delay(500); // Give BLE task time to initialize
     
     // Create other tasks on core 1
-    xTaskCreatePinnedToCore(IMU_Task, "IMU_Task", IMU_TASK_STACK, NULL, IMU_TASK_PRIORITY, &imuTaskHandle, 1);
-    delay(500); // Give IMU task more time to initialize
+    // xTaskCreatePinnedToCore(IMU_Task, "IMU_Task", IMU_TASK_STACK, NULL, IMU_TASK_PRIORITY, &imuTaskHandle, 1);
+    // delay(500); // Give IMU task more time to initialize
     
-    xTaskCreatePinnedToCore(GPS_Task, "GPS_Task", GPS_TASK_STACK, NULL, GPS_TASK_PRIORITY, &gpsTaskHandle, 1);
-    delay(100);
+    // xTaskCreatePinnedToCore(GPS_Task, "GPS_Task", GPS_TASK_STACK, NULL, GPS_TASK_PRIORITY, &gpsTaskHandle, 1);
+    // delay(100);
     
-    xTaskCreatePinnedToCore(SD_Card_Task, "SD_Card_Task", SD_TASK_STACK, NULL, SD_TASK_PRIORITY, &sdCardTaskHandle, 1);
-    delay(100);
+    // xTaskCreatePinnedToCore(SD_Card_Task, "SD_Card_Task", SD_TASK_STACK, NULL, SD_TASK_PRIORITY, &sdCardTaskHandle, 1);
+    // delay(100);
     
-    xTaskCreatePinnedToCore(Compass_Task, "Compass_Task", COMPASS_TASK_STACK, NULL, COMPASS_TASK_PRIORITY, &compassTaskHandle, 1);
-    delay(100);
-    
-    // Create LCD task on core 1
-    xTaskCreatePinnedToCore(LCD_Task, "LCD_Task", LCD_TASK_STACK, NULL, LCD_TASK_PRIORITY, &lcdTaskHandle, 1);
-    
+    // xTaskCreatePinnedToCore(Compass_Task, "Compass_Task", COMPASS_TASK_STACK, NULL, COMPASS_TASK_PRIORITY, &compassTaskHandle, 1);
+    // delay(100);
+
+    // xTaskCreatePinnedToCore(LCD_Task, "LCD_Task", LCD_TASK_STACK, NULL, LCD_TASK_PRIORITY, &lcdTaskHandle, 1);
+    // delay(500);
+    // vTaskDelay(10);
     Serial.println("Setup complete!");
 }
 

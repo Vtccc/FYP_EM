@@ -9,10 +9,13 @@
 #include "SPI.h"
 #include "esp_sntp.h"
 #include "esp_timer.h"
-#include "IMU.h"
-#include "registers.h"
-#include "LCDD.h"
-#include "BLEDevice.h"
+
+// E-paper library
+#include "DEV_Config.h"
+#include "EPD.h"
+#include "GUI_Paint.h"
+#include "ImageData.h"
+#include <stdlib.h>
 
 static const char *TAG_GPS = "GPS_Task";
 static const char *TAG_IMU = "IMU_Task";
@@ -21,7 +24,7 @@ static const char *TAG_COMPASS = "Compass_Task";
 static const char *TAG_EPAPER = "EPaper_Task";
 
 // GPS
-static const int RXPin = 43, TXPin = 44;
+static const int RXPin = 41, TXPin = 42;
 static const uint32_t GPSBaud = 38400;
 
 // The TinyGPSPlus object
@@ -31,10 +34,7 @@ TinyGPSPlus gps;
 EspSoftwareSerial::UART ss;
 
 // IMU
-#define IMU_SDA 7
-#define IMU_SCL 8
-#define IMU_DRDY 9
-ICM42688 IMU(Wire, 0x68, IMU_SDA, IMU_SCL);
+Adafruit_ICM20948 icm;
 String rollsString = "";
 double ax, ay, az;
 double gx, gy, gz;
@@ -44,20 +44,15 @@ double roll, pitch, yaw;
 int compass_azimuth;
 
 // SD Card
-#define PIN_SPI_CS 38 // The ESP32 pin GPIO5
+#define PIN_SPI_CS 10 // The ESP32 pin GPIO5
 File myFile;
 int count = 0;
 double rolls[10] = {400, 400, 400, 400, 400, 400, 400, 400, 400, 400};
-const int chipSelect = 38; // CS pin for the SD card module
-const int MOSI_PIN = 39;  // Custom MOSI pin
-const int MISO_PIN = 41;  // Custom MISO pin
-const int SCK_PIN = 40;   // Custom SCK pin
 
 // RTC
 int64_t get_current_time_us() {
     return esp_timer_get_time();
 }
-
 
 // Function to format time as a string
 String get_formatted_time() {
@@ -150,43 +145,43 @@ void GPS_Task(void *pvParameters)
 
 void IMU_Task(void *pvParameters)
 {
-    ESP_LOGI(TAG_IMU, "IMU_Task");
+  ESP_LOGI(TAG_IMU, "IMU_Task");
 
+  Wire.begin(21, 20);
+  icm.begin_I2C(0x68, &Wire);
 
-  Wire.begin(IMU_SDA, IMU_SCL);
-  int status = IMU.begin();
-  if (status < 0) {
-    ESP_LOGE(TAG_IMU, "IMU 初始化失败: %d", status);
-    vTaskDelete(NULL);
-  }
+  sensors_event_t accel, gyro, temp;
 
-  IMU.setAccelFS(ICM42688::gpm8);    // ±8G
-  IMU.setGyroFS(ICM42688::dps500);   // ±500dps
-  IMU.setAccelODR(ICM42688::odr12_5);
-  IMU.setGyroODR(ICM42688::odr12_5);
+  while (true)
+  {
+    // Get sensor events
+    icm.getEvent(&accel, &gyro, &temp);
 
-  while (true) {
+    // Store accelerometer and gyroscope values
+    ax = accel.acceleration.x;
+    ay = accel.acceleration.y;
+    az = accel.acceleration.z;
 
-    IMU.getAGT();
+    gx = gyro.gyro.x;
+    gy = gyro.gyro.y;
+    gz = gyro.gyro.z;
 
- 
-    ax = IMU.accX() * 9.81;        // m/s²
-    ay = IMU.accY() * 9.81;
-    az = IMU.accZ() * 9.81;
-    
-    gx = IMU.gyrX() * (M_PI / 180.0); // rad/s
-    gy = IMU.gyrY() * (M_PI / 180.0);
-    gz = IMU.gyrZ() * (M_PI / 180.0);
+    // Compute Euler angles (roll, pitch, yaw)
+    roll = -(atan2(ay, az) * 180.0 / PI);                        
+    pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI; 
+    yaw += (gz * 0.01);
 
-
-    roll = -(atan2(ay, az) * 180.0 / M_PI);
-    pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / M_PI;
-    yaw += (gz * 0.01);           // 积分得到偏航角
-
-   
-    Serial.printf("Roll: %.2f, Pitch: %.2f\n", roll, pitch);
+    // Store roll values during 1 second
+    // rolls[count++ % 10] = roll;
+    // for (int i = 0; i < 10; i++)
+    // {
+    //   Serial.printf("%f," ,rolls[i]);
+    // }
+    // Serial.printf("\n");
+    Serial.printf("%f,",roll);
 
     vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
 }
 
 void SD_Card_Task(void *pvParameters)
@@ -283,57 +278,57 @@ void Compass_Task(void *pvParameters)
   }
 }
 
-// void ePaper_Task(void *pvParameters)
-// {
-//   const int rectHeight = 40;
-//   const int lineLength = 60;
-//   const double maxAngle = 50.0;
-//   const double k = 0.05; // Non-linear scaling factor
+void ePaper_Task(void *pvParameters)
+{
+  const int rectHeight = 40;
+  const int lineLength = 60;
+  const double maxAngle = 50.0;
+  const double k = 0.05; // Non-linear scaling factor
 
-//   DEV_Module_Init();
+  DEV_Module_Init();
 
-//   EPD_2in13_V4_Init();
-//   EPD_2in13_V4_Clear();
+  EPD_2in13_V4_Init();
+  EPD_2in13_V4_Clear();
 
-//   // Create a new image cache
-//   UBYTE *BlackImage;
-//   UWORD Imagesize = ((EPD_2in13_V4_WIDTH % 8 == 0) ? (EPD_2in13_V4_WIDTH / 8) : (EPD_2in13_V4_WIDTH / 8 + 1)) * EPD_2in13_V4_HEIGHT;
-//   if ((BlackImage = (UBYTE *)malloc(Imagesize)) == NULL)
-//   {
-//     Serial.println(F("Failed to apply for black memory..."));
-//     while (1)
-//       ;
-//   }
-//   Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
-//   Paint_Clear(WHITE);
+  // Create a new image cache
+  UBYTE *BlackImage;
+  UWORD Imagesize = ((EPD_2in13_V4_WIDTH % 8 == 0) ? (EPD_2in13_V4_WIDTH / 8) : (EPD_2in13_V4_WIDTH / 8 + 1)) * EPD_2in13_V4_HEIGHT;
+  if ((BlackImage = (UBYTE *)malloc(Imagesize)) == NULL)
+  {
+    Serial.println(F("Failed to apply for black memory..."));
+    while (1)
+      ;
+  }
+  Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
+  Paint_Clear(WHITE);
 
-//   Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
-//   Paint_SelectImage(BlackImage);
+  Paint_NewImage(BlackImage, EPD_2in13_V4_WIDTH, EPD_2in13_V4_HEIGHT, 90, WHITE);
+  Paint_SelectImage(BlackImage);
 
-//   while (true)
-//   {
-//     // Implenment non-linear scaling of roll to rectWidth
-//     if (roll < -maxAngle)
-//       roll = -maxAngle;
-//     if (roll > maxAngle)
-//       roll = maxAngle;
+  while (true)
+  {
+    // Implenment non-linear scaling of roll to rectWidth
+    if (roll < -maxAngle)
+      roll = -maxAngle;
+    if (roll > maxAngle)
+      roll = maxAngle;
 
-//     double scaledRoll = tanh(k * -roll) / tanh(k * maxAngle);
-//     int rectWidth = (int)(scaledRoll * (EPD_2in13_V4_HEIGHT / 2));
+    double scaledRoll = tanh(k * -roll) / tanh(k * maxAngle);
+    int rectWidth = (int)(scaledRoll * (EPD_2in13_V4_HEIGHT / 2));
 
-//     // Clear the previous rectangle
-//     Paint_ClearWindows(0, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2 - 2, EPD_2in13_V4_HEIGHT, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2 + 2, WHITE);
+    // Clear the previous rectangle
+    Paint_ClearWindows(0, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2 - 2, EPD_2in13_V4_HEIGHT, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2 + 2, WHITE);
 
-//     // Draw the new rectangle and center line
-//     Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-//     Paint_DrawLine(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - lineLength / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + lineLength / 2, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    // Draw the new rectangle and center line
+    Paint_DrawRectangle(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - rectHeight / 2, EPD_2in13_V4_HEIGHT / 2 + rectWidth, EPD_2in13_V4_WIDTH / 2 + rectHeight / 2, BLACK, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    Paint_DrawLine(EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 - lineLength / 2, EPD_2in13_V4_HEIGHT / 2, EPD_2in13_V4_WIDTH / 2 + lineLength / 2, BLACK, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
 
-//     // Partial refresh of the display
-//     EPD_2in13_V4_Display_Partial(BlackImage);
+    // Partial refresh of the display
+    EPD_2in13_V4_Display_Partial(BlackImage);
 
-//     vTaskDelay(100 / portTICK_PERIOD_MS);
-//   }
-// }
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+  }
+}
 
 void setup()
 {

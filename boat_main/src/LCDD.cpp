@@ -172,7 +172,7 @@ void LCDD::Clear_Screen(uint16_t color) {
   }
 }
 
-// 保持其他绘图函数实现与原始逻辑一致
+
 void LCDD::Draw_Rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color) 
 {
   Write_Command(0x2A); // 设置列地址
@@ -232,19 +232,27 @@ void LCDD::Draw_Balance_Indicator(int value)
     }
 }
 
+void LCDD::Rotate90(const uint8_t src[8], uint8_t dst[8]) {
+  memset(dst, 0, 8);
+  for(int y=0; y<8; y++) 
+    for(int x=0; x<8; x++) 
+      dst[x] |= ((src[y] >> (7-x)) & 1) << y;
+}
 
+void LCDD::Draw_Rotated_Number(uint8_t num, uint16_t startRow, uint16_t startCol) {
+  if(num > 10) return;
+  uint8_t rotated[8];
+  Rotate90(font[num], rotated);
 
-
-void LCDD::Draw_Line(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color) {
-    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy;
-
-    while (true) {
-        Draw_Rectangle(x0, y0, x0, y0, color); // 用单像素矩形模拟画点
-        if (x0 == x1 && y0 == y1) break;
-        int e2 = 2 * err;
-        if (e2 >= dy) { err += dy; x0 += sx; }
-        if (e2 <= dx) { err += dx; y0 += sy; }
+  Write_Command(0x2A); Write_Data(startRow); Write_Data(startRow + 7); // 8列宽
+  Write_Command(0x2B); Write_Data(startCol); Write_Data(startCol + 7);  // 8行高
+  Write_Command(0x2C);
+  
+  for(uint8_t y=0; y<8; y++) {
+    for(int x=7; x>=0; x--) {
+      bool pixel = rotated[y] & (1 << x);
+      for(uint8_t k=0;k<4;k++) 
+        Write_Data(pixel ? 0xFF : 0x00);
     }
+  }
 }

@@ -43,53 +43,43 @@ int ICM42688::begin() {
 		_i2c->begin(_sda_pin, _scl_pin);
 		// setting the I2C clock
 		_i2c->setClock(I2C_CLK);
-		_i2c->setTimeOut(500);
 	}
 
 	// reset the ICM42688
-	Serial.println("Resetting IMU");
 	reset();
-
 
 	// check the WHO AM I byte
 	if (whoAmI() != WHO_AM_I) {
-		Serial.println("IMU WHO_AM_I check failed");
 		return -3;
 	}
 
 	// turn on accel and gyro in Low Noise (LN) Mode
 	if (writeRegister(UB0_REG_PWR_MGMT0, 0x0F) < 0) {
-		Serial.println("IMU PWR_MGMT0 write failed");
 		return -4;
 	}
 
 	// 16G is default -- do this to set up accel resolution scaling
 	int ret = setAccelFS(gpm16);
 	if (ret < 0) {
-		Serial.println("IMU setAccelFS failed");
 		return ret;
 	}
 
 	// 2000DPS is default -- do this to set up gyro resolution scaling
 	ret = setGyroFS(dps2000);
 	if (ret < 0) {
-		Serial.println("IMU setGyroFS failed");
 		return ret;
 	}
 
 	// disable inner filters (Notch filter, Anti-alias filter, UI filter block)
 	if (setFilters(false, false) < 0) {
-		Serial.println("IMU setFilters failed");
 		return -7;
 	}
 
 	// estimate gyro bias
-	// if (calibrateGyro() < 0) {
-	// 	Serial.println("IMU calibrateGyro failed");
-	// 	return -8;
-	// }
+	if (calibrateGyro() < 0) {
+		return -8;
+	}
 	// successful init, return 1
-	Serial.println("IMU initialization successful");
 	return 1;
 }
 

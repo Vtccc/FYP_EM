@@ -1,25 +1,27 @@
-// LCDD.cpp
-#include "LCDD.h"
+// 定义引脚和全局变量
+#define TE_PIN   1
+#define RES_PIN  2
+#define DC_PIN   3
+#define CS_PIN   4
+#define SCLK_PIN 5
+#define SDI_PIN  6
 
-LCDD::LCDD(uint8_t te, uint8_t res, uint8_t dc, uint8_t cs, uint8_t sclk, uint8_t sdi)
-  : TE_PIN(te), RES_PIN(res), DC_PIN(dc), CS_PIN(cs), SCLK_PIN(sclk), SDI_PIN(sdi) {
-  pinMode(TE_PIN, OUTPUT);
-  pinMode(RES_PIN, OUTPUT);
-  pinMode(DC_PIN, OUTPUT);
-  pinMode(CS_PIN, OUTPUT);
-  pinMode(SCLK_PIN, OUTPUT);
-  pinMode(SDI_PIN, OUTPUT);
+    const int centerX = (23+36)/2;        // 屏幕水平中心
+    const int centerY = 191/2;            // 屏幕垂直中心
+    const int rectHeight = 1;             // 矩形固定高度
+    const int maxValue = 50;              // 最大输入值
+    const double k = 0.05;                // 非线性缩放因子
 
-}
 
-void LCDD::Initial_ST7305() 
-{ // 复位屏幕
+// 初始化屏幕
+void Initial_ST7305() {
+  // 复位屏幕
   digitalWrite(RES_PIN, HIGH);
   delay(100);
   digitalWrite(RES_PIN, LOW);
-  delay(100);
+  delay(10000);
   digitalWrite(RES_PIN, HIGH);
-  delay(100);
+  delay(10000);
 
   // 7305 初始化命令
   Write_Command(0xD6); // NVM Load Control
@@ -135,22 +137,24 @@ void LCDD::Initial_ST7305()
   Write_Command(0x29); // DISPLAY ON
 }
 
-
-void LCDD::Write_Command(uint8_t command) {
-  digitalWrite(DC_PIN, LOW);
-  digitalWrite(CS_PIN, LOW);
-  shiftOut(SDI_PIN, SCLK_PIN, MSBFIRST, command);
-  digitalWrite(CS_PIN, HIGH);
+// 写命令
+void Write_Command(uint8_t command) {
+  digitalWrite(DC_PIN, LOW);  // DC = 0 表示命令
+  digitalWrite(CS_PIN, LOW);  // 片选使能
+  shiftOut(SDI_PIN, SCLK_PIN, MSBFIRST, command); // 发送命令
+  digitalWrite(CS_PIN, HIGH); // 片选禁用
 }
 
-void LCDD::Write_Data(uint8_t data) {
-  digitalWrite(DC_PIN, HIGH);
-  digitalWrite(CS_PIN, LOW);
-  shiftOut(SDI_PIN, SCLK_PIN, MSBFIRST, data);
-  digitalWrite(CS_PIN, HIGH);
+// 写数据
+void Write_Data(uint8_t data) {
+  digitalWrite(DC_PIN, HIGH); // DC = 1 表示数据
+  digitalWrite(CS_PIN, LOW);  // 片选使能
+  shiftOut(SDI_PIN, SCLK_PIN, MSBFIRST, data); // 发送数据
+  digitalWrite(CS_PIN, HIGH); // 片选禁用
 }
 
-void LCDD::Clear_Screen(uint16_t color) {
+// 清屏
+void Clear_Screen(uint16_t color) {
   Write_Command(0x2A); // 设置列地址
   Write_Data(0x17);    // 起始列
   Write_Data(0x24);    // 结束列 (168列)
@@ -174,8 +178,9 @@ void LCDD::Clear_Screen(uint16_t color) {
 }
 
 
-void LCDD::Draw_Rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color) 
-{
+
+// 绘制长方形
+void Draw_Rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color) {
   Write_Command(0x2A); // 设置列地址
   Write_Data(x1); // 起始列高字节
   // Write_Data(x1 & 0xFF); // 起始列低字节
@@ -202,58 +207,98 @@ void LCDD::Draw_Rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, ui
   }
 }
 
-
-
-void LCDD::Draw_Balance_Indicator(int value) 
-{
-      const int centerX = (23+36)/2;           // Middle of screen x
-    const int centerY = 191/2;           // Middle of screen y
-    const int rectHeight = 1;        // Height of the rectangles
-    const int maxValue = 50;          // Maximum input value (like maxAngle in original)
-    const double k = 0.05;            // Non-linear scaling factor
+void Draw_Balance_Indicator(int value) {
+    static int lastRectWidth = 0;         // 保存上一次的宽度
+    static int lastDirection = 0;         // 保存上一次方向（0:无 1:右 -1:左）
     
-    // Clamp the input value
-    if (value < -maxValue) value = -maxValue;
-    if (value > maxValue) value = maxValue;
+
     
-    // Calculate scaled width using non-linear scaling (similar to original)
+    // 数值钳位
+    value = constrain(value, -maxValue, maxValue);
+    
+    // 计算缩放宽度
     double scaledValue = tanh(k * -value) / tanh(k * maxValue);
-    int rectWidth = (int)(scaledValue * 60);  // 60 pixels maximum width
-    
-    // Draw center vertical line
-    Draw_Rectangle(centerX-2, centerY, centerX+2, centerY, 0xFFFF);
+    int rectWidth = (int)(scaledValue * 60);
+    int currentDirection = (rectWidth > 0) ? 1 : (rectWidth < 0) ? -1 : 0;
 
-    // Draw rectangles on both sides
-    if (rectWidth > 0) {
-        // Right side rectangle
-        Draw_Rectangle(centerX - rectHeight, centerY, centerX + rectHeight, centerY+rectWidth, 0xFFFF);
-    } else {
-        // Left side rectangle
-        Draw_Rectangle(centerX - rectHeight, centerY+rectWidth, centerX + rectHeight, centerY, 0xFFFF);
+    // 若状态未改变则直接返回
+    if (rectWidth == lastRectWidth && currentDirection == lastDirection) return;
+
+    // 清除旧指示条
+    if (lastDirection != 0) {
+        if (lastDirection == 1) {
+            // 清除右侧旧条
+            Draw_Rectangle(centerX - rectHeight, 
+                          centerY, 
+                          centerX + rectHeight, 
+                          centerY + lastRectWidth, 
+                          0x0000);
+        } else {
+            // 清除左侧旧条
+            Draw_Rectangle(centerX - rectHeight,
+                          centerY + lastRectWidth,
+                          centerX + rectHeight,
+                          centerY,
+                          0x0000);
+        }
     }
+
+    // 绘制新指示条
+    if (currentDirection != 0) {
+        if (currentDirection == 1) {
+            // 绘制右侧新条
+            Draw_Rectangle(centerX - rectHeight,
+                          centerY,
+                          centerX + rectHeight,
+                          centerY + rectWidth,
+                          0xFFFF);
+        } else {
+            // 绘制左侧新条
+            Draw_Rectangle(centerX - rectHeight,
+                          centerY + rectWidth,
+                          centerX + rectHeight,
+                          centerY,
+                          0xFFFF);
+        }
+    }
+
+    // 重绘中心线（可能被覆盖）
+    Draw_Rectangle(centerX - 2, centerY, centerX + 2, centerY, 0xFFFF);
+
+    // 更新记录值
+    lastRectWidth = rectWidth;
+    lastDirection = currentDirection;
 }
 
-void LCDD::Rotate90(const uint8_t src[8], uint8_t dst[8]) {
-  memset(dst, 0, 8);
-  for(int y=0; y<8; y++) 
-    for(int x=0; x<8; x++) 
-      dst[x] |= ((src[y] >> (7-x)) & 1) << y;
-}
-
-void LCDD::Draw_Rotated_Number(uint8_t num, uint16_t startRow, uint16_t startCol) {
-  if(num > 10) return;
-  uint8_t rotated[8];
-  Rotate90(font[num], rotated);
-
-  Write_Command(0x2A); Write_Data(startRow); Write_Data(startRow + 7); // 8列宽
-  Write_Command(0x2B); Write_Data(startCol); Write_Data(startCol + 7);  // 8行高
-  Write_Command(0x2C);
+void setup() {
+  Serial.begin(115200);
   
-  for(uint8_t y=0; y<8; y++) {
-    for(int x=7; x>=0; x--) {
-      bool pixel = rotated[y] & (1 << x);
-      for(uint8_t k=0;k<4;k++) 
-        Write_Data(pixel ? 0xFF : 0x00);
+  // 初始化引脚
+  pinMode(TE_PIN, OUTPUT);
+  pinMode(RES_PIN, OUTPUT);
+  pinMode(DC_PIN, OUTPUT);
+  pinMode(CS_PIN, OUTPUT);
+  pinMode(SCLK_PIN, OUTPUT);
+  pinMode(SDI_PIN, OUTPUT);
+
+  // 初始化屏幕
+  Initial_ST7305();
+
+  // 初始清屏并绘制静态元素
+  Clear_Screen(0x0000);
+  Draw_Rectangle(centerX - 2, centerY, centerX + 2, centerY, 0xFFFF); // 绘制固定中心线
+
+  // 主循环
+  while(true) {
+    for (int i = -50; i <= 50; i += 10) {
+        Draw_Balance_Indicator(i); // 仅更新指示条
+        delay(500);
     }
+    delay(500);
   }
 }
+
+void loop() {
+  // 保留空循环
+}
+

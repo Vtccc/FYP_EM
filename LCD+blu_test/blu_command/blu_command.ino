@@ -10,6 +10,7 @@ static BLEUUID ServiceUUID((uint16_t)0xFEA6);
 static BLEUUID CommandWriteCharacteristicUUID("b5f90072-aa8d-11e3-9046-0002a5d5c51b");
 static bool ItsOn = false;
 
+
 bool ScanAndConnect(void)
 {
   ThisScan->clearResults();
@@ -31,11 +32,11 @@ void setup(void)
   ThisDevice->init("");
   ThisDevice->setEncryptionLevel(ESP_BLE_SEC_ENCRYPT);
 
-  // 直接执行连接和发送指令的逻辑
+  
   if (ScanAndConnect())
   {
     // 发送打开指令
-    // ServiceCharacteristic(ServiceUUID, CommandWriteCharacteristicUUID)->writeValue({0x03, 0x01, 0x01, 0x01});
+    ServiceCharacteristic(ServiceUUID, CommandWriteCharacteristicUUID)->writeValue({0x03, 0x01, 0x01, 0x01});
     ItsOn = true;
     digitalWrite(LED_BUILTIN, 1); // 打开LED表示设备已连接并发送指令
   }

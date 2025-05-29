@@ -2,10 +2,10 @@
 #include <SD.h>
 
 // Define custom pins
-const int chipSelect = 10; // CS pin for the SD card module
-const int MOSI_PIN = 11;  // Custom MOSI pin
-const int MISO_PIN = 13;  // Custom MISO pin
-const int SCK_PIN = 12;   // Custom SCK pin
+const int chipSelect = 38; // CS pin for the SD card module
+const int MOSI_PIN = 39;  // Custom MOSI pin
+const int MISO_PIN = 41;  // Custom MISO pin
+const int SCK_PIN = 40;   // Custom SCK pin
 
 // Create an instance of SPIClass for software SPI
 SPIClass mySPI = SPIClass(HSPI); // Use HSPI for software SPI
@@ -28,7 +28,7 @@ void setup() {
   Serial.println("Initialization successful.");
 
   listFiles();
-  readFile("test.txt"); // Change to the name of your file
+  readFile("11.txt"); // Change to the name of your file
 }
 
 void loop() {
