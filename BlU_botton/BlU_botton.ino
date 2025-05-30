@@ -41,7 +41,7 @@ void handleButtonClick() {
     // 发送开始录制指令
     ServiceCharacteristic(ServiceUUID, CommandWriteCharacteristicUUID)->writeValue({0x03, 0x01, 0x01, 0x01});
     ItsOn = true;
-    digitalWrite(LED_BUILTIN, 1);
+    
     startTime = millis();
     Serial.println("Recording started");
   } else if (!IsConnected) {

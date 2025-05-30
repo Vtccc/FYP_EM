@@ -206,11 +206,13 @@ void LCDD::Draw_Rectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, ui
 
 void LCDD::Draw_Balance_Indicator(int value) 
 {
-      const int centerX = (23+36)/2;           // Middle of screen x
+    const int centerX = (23+36)/2;           // Middle of screen x
     const int centerY = 191/2;           // Middle of screen y
     const int rectHeight = 1;        // Height of the rectangles
     const int maxValue = 50;          // Maximum input value (like maxAngle in original)
     const double k = 0.05;            // Non-linear scaling factor
+    static int lastWidth = 0;
+    static int lastDir = 0;
     
     // Clamp the input value
     if (value < -maxValue) value = -maxValue;
@@ -219,18 +221,32 @@ void LCDD::Draw_Balance_Indicator(int value)
     // Calculate scaled width using non-linear scaling (similar to original)
     double scaledValue = tanh(k * -value) / tanh(k * maxValue);
     int rectWidth = (int)(scaledValue * 60);  // 60 pixels maximum width
+    int rectDir = (rectWidth > 0) ? 1 : (rectWidth < 0) ? -1 : 0;
+
     
     // Draw center vertical line
-    Draw_Rectangle(centerX-2, centerY, centerX+2, centerY, 0xFFFF);
+    Draw_Rectangle(centerX, centerY, centerX+4, centerY, 0xFFFF);
 
-    // Draw rectangles on both sides
-    if (rectWidth > 0) {
-        // Right side rectangle
-        Draw_Rectangle(centerX - rectHeight, centerY, centerX + rectHeight, centerY+rectWidth, 0xFFFF);
+    if(rectWidth == lastWidth && rectDir == lastDir) return;
+
+    if(lastDir != 0) {
+    if(lastDir == 1) {
+      Draw_Rectangle(centerX+1, centerY, centerX+3, centerY+lastWidth, 0x0000);
     } else {
-        // Left side rectangle
-        Draw_Rectangle(centerX - rectHeight, centerY+rectWidth, centerX + rectHeight, centerY, 0xFFFF);
+      Draw_Rectangle(centerX+1, centerY+lastWidth, centerX+3, centerY, 0x0000);
     }
+  }
+    if(rectDir != 0) {
+    if(rectDir == 1) {
+      Draw_Rectangle(centerX+1, centerY, centerX+3, centerY+rectWidth, 0xFFFF);
+    } else {
+      Draw_Rectangle(centerX+1, centerY+rectWidth, centerX+3, centerY, 0xFFFF);
+    }
+  }
+
+    lastWidth = rectWidth;
+    lastDir = rectDir;
+
 }
 
 void LCDD::Rotate90(const uint8_t src[8], uint8_t dst[8]) {
