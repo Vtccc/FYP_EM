@@ -351,7 +351,7 @@ void SD_Card_Task(void *pvParameters)
     myFile.println("{");
     myFile.println("refreshRate=10;");
     myFile.println("version=1.0;");
-    myFile.println("format=[timestamp,gps.satellites,gps.hdop,gps.location.age,gps.lat,gps.lng,gps.speed,gps.course,gps.month,gps.day,gps.year,gps.hour,gps.minute,gps.second,gps.centisecond,compass,roll,pitch,yaw]");
+    myFile.println("format=[timestamp,gps.satellites,gps.hdop,gps.location.age,gps.lat,gps.lng,gps.speed,gps.course,gps.month,gps.day,gps.year,gps.hour,gps.minute,gps.second,gps.centisecond,compass,roll,pitch,yaw,videoRecording]");
     myFile.println("}");
     myFile.flush(); // Ensure header is written
     
@@ -367,12 +367,12 @@ void SD_Card_Task(void *pvParameters)
         rollsString = arrayToString(rolls, rollsSize);
 
         // Write data to file
-        myFile.printf("%s,%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f\n",
+        myFile.printf("%s,%d,%f,%d,%f,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%d\n",
                     current_time.c_str(), gps.satellites.value(), gps.hdop.hdop(), gps.location.age(),
                     gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(),
                     gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(),
                     gps.time.minute(), gps.time.second(), gps.time.centisecond(),
-                    compass_azimuth, roll, pitch, yaw);
+                    compass_azimuth, roll, pitch, yaw,isRecording);
 
         // Flush data to SD card
         myFile.flush();
