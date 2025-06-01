@@ -78,7 +78,7 @@ static const char *TAG_COMPASS = "Compass_Task";
 static const char *TAG_EPAPER = "EPaper_Task";
 
 // GPS
-static const int RXPin = 43, TXPin = 44;
+static const int RXPin = 44, TXPin = 43;
 static const uint32_t GPSBaud = 38400;
 
 // The TinyGPSPlus object
@@ -351,7 +351,7 @@ void SD_Card_Task(void *pvParameters)
     myFile.println("{");
     myFile.println("refreshRate=10;");
     myFile.println("version=1.0;");
-    myFile.println("format=[timestamp,gps.satellites,gps.hdop,gps.location.age,gps.lat,gps.lng,gps.speed,gps.course,gps.month,gps.day,gps.year,gps.hour,gps.minute,gps.second,gps.centisecond,compass,roll,pitch,yaw,videoRecording]");
+    myFile.println("format=[timestamp,gps.satellites,gps.hdop,gps.location.age,gps.lat,gps.lng,gps.speed,gps.course,gps.month,gps.day,gps.year,gps.hour,gps.minute,gps.second,gps.centisecond,compass,roll,pitch,yaw,recording]");
     myFile.println("}");
     myFile.flush(); // Ensure header is written
     
@@ -372,7 +372,7 @@ void SD_Card_Task(void *pvParameters)
                     gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg(),
                     gps.date.month(), gps.date.day(), gps.date.year(), gps.time.hour(),
                     gps.time.minute(), gps.time.second(), gps.time.centisecond(),
-                    compass_azimuth, roll, pitch, yaw,isRecording);
+                    compass_azimuth, roll, pitch, yaw, isRecording);
 
         // Flush data to SD card
         myFile.flush();
@@ -380,6 +380,8 @@ void SD_Card_Task(void *pvParameters)
         // Print time to Serial
         // Serial.print("Data written at: ");
         // Serial.println(current_time);
+        Serial.printf(gps.location.isValid() ? "Lat: %.6f, Lng: %.6f, Speed: %.2f m/s, Course: %.2f°\n" : "GPS data not valid\n",
+                      gps.location.lat(), gps.location.lng(), gps.speed.mps(), gps.course.deg());
 
         vTaskDelay(100 / portTICK_PERIOD_MS); // Adjust delay to ensure 10 records per second
     }
